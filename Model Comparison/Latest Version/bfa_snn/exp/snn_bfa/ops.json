@@ -1,0 +1,86 @@
+[
+    {
+        "class": "overwrite",
+        "sources": [
+            "z0/outputs"
+        ],
+        "destination": "W1/inputs"
+    },
+    {
+        "class": "overwrite",
+        "sources": [
+            "W1/outputs"
+        ],
+        "destination": "z1/j"
+    },
+    {
+        "class": "overwrite",
+        "sources": [
+            "z1/s"
+        ],
+        "destination": "W2/inputs"
+    },
+    {
+        "class": "overwrite",
+        "sources": [
+            "W2/outputs"
+        ],
+        "destination": "z2/j"
+    },
+    {
+        "class": "overwrite",
+        "sources": [
+            "z2/s"
+        ],
+        "destination": "e2/mu"
+    },
+    {
+        "class": "overwrite",
+        "sources": [
+            "e2/dmu"
+        ],
+        "destination": "E2/inputs"
+    },
+    {
+        "class": "overwrite",
+        "sources": [
+            "E2/outputs"
+        ],
+        "destination": "d1/target"
+    },
+    {
+        "class": "overwrite",
+        "sources": [
+            "z1/surrogate"
+        ],
+        "destination": "d1/modulator"
+    },
+    {
+        "class": "overwrite",
+        "sources": [
+            "z0/outputs"
+        ],
+        "destination": "W1/pre"
+    },
+    {
+        "class": "overwrite",
+        "sources": [
+            "d1/dmu"
+        ],
+        "destination": "W1/post"
+    },
+    {
+        "class": "overwrite",
+        "sources": [
+            "z1/s"
+        ],
+        "destination": "W2/pre"
+    },
+    {
+        "class": "overwrite",
+        "sources": [
+            "e2/dmu"
+        ],
+        "destination": "W2/post"
+    }
+]

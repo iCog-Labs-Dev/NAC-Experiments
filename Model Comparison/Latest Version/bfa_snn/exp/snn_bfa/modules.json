@@ -1,0 +1,50 @@
+[
+    {
+        "absolute_path": "ngclearn.components.input_encoders.bernoulliCell",
+        "attributes": [
+            {
+                "name": "BernoulliCell"
+            }
+        ]
+    },
+    {
+        "absolute_path": "ngclearn.components.synapses.hebbian.hebbianSynapse",
+        "attributes": [
+            {
+                "name": "HebbianSynapse"
+            }
+        ]
+    },
+    {
+        "absolute_path": "ngclearn.components.neurons.spiking.sLIFCell",
+        "attributes": [
+            {
+                "name": "SLIFCell"
+            }
+        ]
+    },
+    {
+        "absolute_path": "ngclearn.components.neurons.graded.gaussianErrorCell",
+        "attributes": [
+            {
+                "name": "GaussianErrorCell"
+            }
+        ]
+    },
+    {
+        "absolute_path": "ngclearn.components.synapses.staticSynapse",
+        "attributes": [
+            {
+                "name": "StaticSynapse"
+            }
+        ]
+    },
+    {
+        "absolute_path": "ngcsimlib.operations",
+        "attributes": [
+            {
+                "name": "overwrite"
+            }
+        ]
+    }
+]
