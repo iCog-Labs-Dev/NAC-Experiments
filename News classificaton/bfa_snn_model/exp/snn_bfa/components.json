@@ -1,0 +1,141 @@
+{
+    "components": {
+        "/Circuit/z0": {
+            "class": "BernoulliCell",
+            "args": [
+                "z0"
+            ],
+            "kwargs": {
+                "n_units": 768
+            }
+        },
+        "/Circuit/W1": {
+            "class": "HebbianSynapse",
+            "args": [
+                "W1"
+            ],
+            "kwargs": {
+                "shape": [
+                    768,
+                    1000
+                ],
+                "eta": 1.0,
+                "weight_init": {
+                    "dist": "gaussian",
+                    "mu": 0.0,
+                    "sigma": 0.055
+                },
+                "bias_init": {
+                    "dist": "constant",
+                    "value": 0.0
+                },
+                "sign_value": -1.0,
+                "optim_type": "sgd",
+                "w_bound": 0.0,
+                "pre_wght": 1.0,
+                "post_wght": 0.0013020833333333333,
+                "is_nonnegative": false
+            }
+        },
+        "/Circuit/z1": {
+            "class": "SLIFCell",
+            "args": [
+                "z1"
+            ],
+            "kwargs": {
+                "n_units": 1000,
+                "tau_m": 20.0,
+                "resist_m": 1.0,
+                "thr": 0.4,
+                "resist_inh": 0.0,
+                "sticky_spikes": true,
+                "refract_time": 1.0,
+                "thr_gain": 0.0,
+                "thr_leak": 0.0,
+                "thr_jitter": 0.0
+            }
+        },
+        "/Circuit/W2": {
+            "class": "HebbianSynapse",
+            "args": [
+                "W2"
+            ],
+            "kwargs": {
+                "shape": [
+                    1000,
+                    4
+                ],
+                "eta": 1.0,
+                "weight_init": {
+                    "dist": "gaussian",
+                    "mu": 0.0,
+                    "sigma": 0.055
+                },
+                "bias_init": {
+                    "dist": "constant",
+                    "value": 0.0
+                },
+                "sign_value": -1.0,
+                "optim_type": "sgd",
+                "w_bound": 0.0,
+                "pre_wght": 1.0,
+                "post_wght": 0.001,
+                "is_nonnegative": false
+            }
+        },
+        "/Circuit/z2": {
+            "class": "SLIFCell",
+            "args": [
+                "z2"
+            ],
+            "kwargs": {
+                "n_units": 4,
+                "tau_m": 20.0,
+                "resist_m": 1.0,
+                "thr": 0.4,
+                "resist_inh": 0.0,
+                "sticky_spikes": true,
+                "refract_time": 1.0,
+                "thr_gain": 0.0,
+                "thr_leak": 0.0,
+                "thr_jitter": 0.0
+            }
+        },
+        "/Circuit/e2": {
+            "class": "GaussianErrorCell",
+            "args": [
+                "e2"
+            ],
+            "kwargs": {
+                "n_units": 4
+            }
+        },
+        "/Circuit/E2": {
+            "class": "StaticSynapse",
+            "args": [
+                "E2"
+            ],
+            "kwargs": {
+                "shape": [
+                    4,
+                    1000
+                ],
+                "weight_init": {
+                    "dist": "gaussian",
+                    "mu": 0.0,
+                    "sigma": 0.055
+                },
+                "bias_init": null
+            }
+        },
+        "/Circuit/d1": {
+            "class": "GaussianErrorCell",
+            "args": [
+                "d1"
+            ],
+            "kwargs": {
+                "n_units": 1000
+            }
+        }
+    }
+}
