@@ -2,7 +2,7 @@ from jax import numpy as jnp, random
 import sys, getopt as gopt, optparse, time
 from pcn_model import PCN ## bring in model from museum
 ## bring in ngc-learn analysis tools
-from ngclearn.utils.metric_utils import measure_ACC, measure_CatNLL, measure_MSE
+from ngclearn.utils.metric_utils import measure_ACC, measure_CatNLL, measure_MSE, measure_KLD
 
 """
 ################################################################################
@@ -73,7 +73,7 @@ print("--- Starting Simulation ---")
 # Define evaluation function with accuracy, NLL, and MSE logging
 def eval_model(model, Xdev, Ydev, mb_size):
     n_batches = int(Xdev.shape[0] / mb_size)
-    nll, acc, mse = 0, 0, 0
+    nll, acc, mse, kld = 0, 0, 0, 0
     n_samp_seen = 0
 
     for j in range(n_batches):
@@ -88,23 +88,27 @@ def eval_model(model, Xdev, Ydev, mb_size):
         nll += measure_CatNLL(yMu_0, Yb) * Xb.shape[0]
         acc += measure_ACC(yMu_0, Yb) * Yb.shape[0]
         mse += measure_MSE(yMu_0, Yb, preserve_batch=False) * Xb.shape[0]
+        kld += measure_KLD(yMu_0, Yb, preserve_batch=False) * Xb.shape[0]
+
 
         n_samp_seen += Yb.shape[0]
 
     nll /= Xdev.shape[0]
     acc /= Xdev.shape[0]
     mse /= Xdev.shape[0]
-    return nll, acc, mse
+    kld /= Xdev.shape[0]
+    return nll, acc, mse, kld
 
 # Logging metrics
-trAcc_set, acc_set, efe_set, mse_set = [], [], [], []
+trAcc_set, acc_set, efe_set, mse_set, kld_set = [], [], [], [], []
 sim_start_time = time.time()
 
 # Initial evaluation on training and dev sets
-_, tr_acc, tr_mse = eval_model(model, _X, _Y, mb_size=1000)
-nll, acc, mse = eval_model(model, Xdev, Ydev, mb_size=1000)
+_, tr_acc, tr_mse, tr_kld = eval_model(model, _X, _Y, mb_size=1000)
+nll, acc, mse, kld = eval_model(model, Xdev, Ydev, mb_size=1000)
 
-print(f"-1: Dev: Acc = {acc}, NLL = {nll}, MSE = {jnp.mean(mse)} | Tr: Acc = {tr_acc}, MSE = {jnp.mean(tr_mse)}")
+print(f"-1: Dev: Acc = {acc}, NLL = {nll}, MSE = {jnp.mean(mse)}, KLD = {jnp.mean(kld)} | "
+      f"Tr: Acc = {tr_acc}, MSE = {jnp.mean(tr_mse)}, Tr: KLD = {jnp.mean(tr_kld)}")
 
 # Training loop
 for i in range(n_iter):
@@ -124,17 +128,19 @@ for i in range(n_iter):
         n_samp_seen += Yb.shape[0]
 
     # Periodic evaluation on dev set
-    nll, acc, mse = eval_model(model, Xdev, Ydev, mb_size=1000)
-    _, tr_acc, tr_mse = eval_model(model, _X, _Y, mb_size=1000)
-    
+    _, tr_acc, tr_mse, tr_kld = eval_model(model, _X, _Y, mb_size=1000)
+    nll, acc, mse, kld = eval_model(model, Xdev, Ydev, mb_size=1000)
+
     # Save and log metrics
     trAcc_set.append(tr_acc)
     acc_set.append(acc)
     mse_set.append(mse)
+    kld_set.append(kld)
     efe_set.append(train_EFE / n_samp_seen)
 
     MSE = jnp.array(mse_set)
-    print(f"{i}: Dev: Acc = {acc}, NLL = {nll}, MSE = {jnp.mean(MSE)} | Tr: Acc = {tr_acc}, Tr: MSE = {jnp.mean(tr_mse)}, EFE = {train_EFE / n_samp_seen}")
+    KLD = jnp.array(kld_set)
+    print(f"{i}: Dev: Acc = {acc}, NLL = {nll}, KLD = {jnp.mean(KLD)}, MSE = {jnp.mean(MSE)} | Tr: Acc = {tr_acc}, Tr: MSE = {jnp.mean(tr_mse)},  Tr: KLD = {tr_kld} , EFE = {train_EFE / n_samp_seen}")
 
     if (i + 1) % 5 == 0 or i == (n_iter - 1):
         model.save_to_disk(params_only=True)
