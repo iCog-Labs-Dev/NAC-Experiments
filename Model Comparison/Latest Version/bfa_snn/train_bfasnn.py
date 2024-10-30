@@ -2,7 +2,7 @@ from jax import numpy as jnp, random, nn, jit
 import sys, getopt as gopt, optparse, time
 from bfasnn_model import BFA_SNN as Model  # bring in model from museum
 # bring in ngc-learn analysis tools
-from ngclearn.utils.metric_utils import measure_ACC, measure_CatNLL, measure_MSE
+from ngclearn.utils.metric_utils import measure_ACC, measure_CatNLL, measure_MSE, measure_BCE
 
 """
 ################################################################################
@@ -82,6 +82,7 @@ def eval_model(model, Xdev, Ydev, mb_size, verbosity=1):  # evals model's test-t
     nll = 0.0  # negative Categorical log likelihood
     acc = 0.0  # accuracy
     mse = 0.0  # mean squared error
+    bce = 0.0
     for j in range(n_batches):
         # extract data block/batch
         idx = j * mb_size
@@ -93,22 +94,26 @@ def eval_model(model, Xdev, Ydev, mb_size, verbosity=1):  # evals model's test-t
         _nll = measure_CatNLL(yMu, Yb) * Xb.shape[0]  # un-normalize score
         _acc = measure_ACC(yMu, Yb) * Yb.shape[0]  # un-normalize score
         _mse = measure_MSE(yMu, Yb) * Yb.shape[0]  # un-normalize score
+        _bce = measure_BCE(yMu, Yb) * Yb.shape[0]
         nll += _nll
         acc += _acc
         mse += _mse
+        bce += _bce
 
         n_samp_seen += Yb.shape[0]
         if verbosity > 0:
-            print("\r Acc = {}  NLL = {}  MSE = {}  ({} samps)".format(acc / n_samp_seen,
+            print("\r Acc = {}  NLL = {}  MSE = {} BCE = {} ({} samps)".format(acc / n_samp_seen,
                                                                        nll / n_samp_seen,
                                                                        mse / n_samp_seen,
+                                                                       bce / n_samp_seen,
                                                                        n_samp_seen), end="")
     if verbosity > 0:
         print()
     nll = nll / (Xdev.shape[0])  # calc full dev-set nll
     acc = acc / (Xdev.shape[0])  # calc full dev-set acc
     mse = mse / (Xdev.shape[0])  # calc full dev-set mse
-    return nll, acc, mse
+    bce = bce / (Xdev.shape[0])
+    return nll, acc, mse, bce
 
 
 trAcc_set = []
@@ -116,13 +121,14 @@ trNll_set = []
 acc_set = []
 nll_set = []
 mse_set = []
+bce_set = []
 
 sim_start_time = time.time()  # start time profiling
 
 tr_acc = 0.1
-nll, acc, mse = eval_model(model, Xdev, Ydev, mb_size=1000)
+nll, acc, mse, bce = eval_model(model, Xdev, Ydev, mb_size=1000)
 bestDevAcc = acc
-print("-1: Dev: Acc = {}  NLL = {}  MSE = {} | Tr: Acc = {}".format(acc, nll, mse, tr_acc))
+print("-1: Dev: Acc = {}  NLL = {}  MSE = {} BCE = {} | Tr: Acc = {}".format(acc, nll, mse, bce, tr_acc))
 if verbosity >= 2:
     print(model._get_norm_string())
 trAcc_set.append(tr_acc)  # random guessing is where models typically start
@@ -130,11 +136,13 @@ trNll_set.append(2.4)
 acc_set.append(acc)
 nll_set.append(nll)
 mse_set.append(mse)
+bce_set.append(bce)
 jnp.save("exp/trAcc.npy", jnp.asarray(trAcc_set))
 jnp.save("exp/acc.npy", jnp.asarray(acc_set))
 jnp.save("exp/trNll.npy", jnp.asarray(trNll_set))
 jnp.save("exp/nll.npy", jnp.asarray(nll_set))
 jnp.save("exp/mse.npy", jnp.asarray(mse_set))
+jnp.save("exp/bce.npy", jnp.asarray(bce_set))
 
 for i in range(n_iter):
     # shuffle data (to ensure i.i.d. assumption holds)
@@ -169,7 +177,7 @@ for i in range(n_iter):
         print()
 
     # evaluate current progress of model on dev-set
-    nll, acc, mse = eval_model(model, Xdev, Ydev, mb_size=1000)
+    nll, acc, mse, bce  = eval_model(model, Xdev, Ydev, mb_size=1000)
     tr_acc = (tr_acc / n_samp_seen)
     tr_nll = (tr_nll / n_samp_seen)
     if acc >= bestDevAcc:
@@ -181,8 +189,9 @@ for i in range(n_iter):
         jnp.save("exp/trNll.npy", jnp.asarray(trNll_set))
         jnp.save("exp/nll.npy", jnp.asarray(nll_set))
         jnp.save("exp/mse.npy", jnp.asarray(mse_set))
+        jnp.save("exp/bce.npy", jnp.asarray(bce_set))
 
-    print("{}: Dev: Acc = {}  NLL = {}  MSE = {} | Tr: Acc = {}".format(i, acc, nll, mse, tr_acc))
+    print("{}: Dev: Acc = {}  NLL = {}  MSE = {} BCE = {} | Tr: Acc = {}".format(i, acc, nll, mse, bce, tr_acc))
     if verbosity >= 2:
         print(model._get_norm_string())
 
@@ -192,6 +201,7 @@ for i in range(n_iter):
     acc_set.append(acc)
     nll_set.append(nll)
     mse_set.append(mse)
+    bce_set.append(bce)
 
 # Stop time profiling
 sim_time = time.time() - sim_start_time
