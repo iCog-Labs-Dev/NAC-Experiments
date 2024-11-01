@@ -56,7 +56,7 @@ y_dim = _Y.shape[1]
 
 lab_estimator = "current"  # "voltage" or "spike"
 n_iter = 100  # number of discrete time steps to simulate
-mb_size = 250
+mb_size = 128
 n_batches = int(_X.shape[0] / mb_size)
 save_point = 5  # save model params every epoch/iteration modulo "save_point"
 
