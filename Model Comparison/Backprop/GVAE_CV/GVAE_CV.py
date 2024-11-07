@@ -24,12 +24,12 @@ torch.backends.cudnn.benchmark = False
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 # Load Data
-train_x = np.load('mnist/trainX.npy')
-train_y = np.load('mnist/trainY.npy')
-test_x = np.load('mnist/testX.npy')
-test_y = np.load('mnist/testY.npy')
-valid_x = np.load('mnist/validX.npy')
-valid_y = np.load('mnist/validY.npy')
+train_x = np.load('../../../data/mnist/trainX.npy')
+train_y = np.load('../../../data/mnist/trainY.npy')
+test_x = np.load('../../../data/mnist/testX.npy')
+test_y = np.load('../../../data/mnist/testY.npy')
+valid_x = np.load('../../../data/mnist/validX.npy')
+valid_y = np.load('../../../data/mnist/validY.npy')
 
 # Convert to PyTorch tensors
 train_x = torch.tensor(train_x, dtype=torch.float32).to(device)
@@ -40,17 +40,17 @@ valid_x = torch.tensor(valid_x, dtype=torch.float32).to(device)
 valid_y = torch.tensor(valid_y, dtype=torch.float32).to(device)
 
 # Dataloaders
-batch_size = 128
+batch_size = 200
 train_loader = DataLoader(TensorDataset(train_x, train_y), batch_size=batch_size, shuffle=True)
 valid_loader = DataLoader(TensorDataset(valid_x, valid_y), batch_size=batch_size, shuffle=False)
 test_loader = DataLoader(TensorDataset(test_x, test_y), batch_size=batch_size, shuffle=False)
 
 
 # Hyperparameters
-learning_rate = 0.0002
-num_epochs = 100
-latent_dim = 20
-fixed_variance = 1
+learning_rate = 0.0009
+num_epochs = 50
+latent_dim = 128
+fixed_variance = 0.1
 
 # Define the VAE Model with Constant Variance
 class CV_VAE(nn.Module):
@@ -137,6 +137,7 @@ def evaluate_model(model, data_loader, device, num_bins=20, threshold_ratio=0.05
     total_mse = 0
     total_bce = 0
     total_kld = 0
+    total_accuracy = 0
     all_real = []
     all_recon = []
 
@@ -149,7 +150,6 @@ def evaluate_model(model, data_loader, device, num_bins=20, threshold_ratio=0.05
             mse = mean_squared_error(x.cpu().numpy(), recon_x.cpu().numpy())
             total_mse += mse * x.size(0)
           
-            
             # BCE Loss
             bce = nn.functional.binary_cross_entropy(recon_x, x, reduction='sum').item()
             total_bce += bce
@@ -158,24 +158,30 @@ def evaluate_model(model, data_loader, device, num_bins=20, threshold_ratio=0.05
             kld = 0.5 * torch.sum(mu.pow(2)).item()
             total_kld += kld
             
+            # Accuracy computation
+            pred = (recon_x > 0.5).float()  # Binarize recon_x for comparison
+            accuracy = (pred == x).float().mean().item()
+            total_accuracy += accuracy * x.size(0)
+
             # NDB computation
             all_real.append(x.cpu())
             all_recon.append(recon_x.cpu())
 
-    # Calculate average losses
+    # Calculate average losses and accuracy
     avg_mse = total_mse / len(data_loader.dataset)
     avg_bce = total_bce / len(data_loader.dataset)
     avg_kld = total_kld / len(data_loader.dataset)
-    
- 
+    avg_accuracy = total_accuracy / len(data_loader.dataset)
+
     all_real = torch.cat(all_real, dim=0)
     all_recon = torch.cat(all_recon, dim=0)
 
     # Compute NDB
     ndb = compute_ndb(all_real, all_recon, num_bins=num_bins, threshold_ratio=threshold_ratio)
 
-    print(f"Evaluation Results:\nMSE: {avg_mse:.6f}\nBCE: {avg_bce:.6f}\nKLD: {avg_kld:.6f}\nNDB: {ndb}")
-    return avg_mse, avg_bce, avg_kld, ndb
+    print(f"Evaluation Results:\nMSE: {avg_mse:.6f}\nBCE: {avg_bce:.6f}\nKLD: {avg_kld:.6f}\nAccuracy: {avg_accuracy:.6f}\nNDB: {ndb}")
+    return avg_mse, avg_bce, avg_kld, avg_accuracy, ndb
+
 
 def display_reconstructed_images(model, data_loader, device, num_images=10):
     model.eval()
