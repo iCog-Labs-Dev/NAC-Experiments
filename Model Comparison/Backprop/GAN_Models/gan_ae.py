@@ -11,6 +11,7 @@ import torch.nn.functional as F
 import random
 import matplotlib.pyplot as plt 
 from mnist_data import get_mnist_loaders
+from sklearn.manifold import TSNE 
 
 os.makedirs("images", exist_ok=True)
 os.makedirs("models", exist_ok=True)
@@ -19,8 +20,8 @@ parser = argparse.ArgumentParser()
 parser.add_argument("--n_epochs", type=int, default=50, help="number of epochs of training")
 parser.add_argument("--batch_size", type=int, default=200, help="size of the batches")
 parser.add_argument("--lr", type=float, default=0.0002, help="adam: learning rate")
-parser.add_argument("--b1", type=float, default=0.5, help="adam: decay of first order momentum of gradient")
-parser.add_argument("--b2", type=float, default=0.999, help="adam: decay of second order momentum of gradient")
+parser.add_argument("--b1", type=float, default=0.5, help="adam: decay of first-order momentum of gradient")
+parser.add_argument("--b2", type=float, default=0.999, help="adam: decay of second-order momentum of gradient")
 parser.add_argument("--n_cpu", type=int, default=8, help="number of CPU threads for data loading")
 parser.add_argument("--latent_dim", type=int, default=10, help="dimensionality of the latent code")
 parser.add_argument("--img_size", type=int, default=32, help="size of each image dimension")
@@ -51,7 +52,6 @@ class Encoder(nn.Module):
             nn.LeakyReLU(0.2, inplace=True),
         )
 
-        # Output both mean and log variance for latent variables
         self.mu = nn.Linear(512, opt.latent_dim)
         self.logvar = nn.Linear(512, opt.latent_dim)
 
@@ -60,7 +60,6 @@ class Encoder(nn.Module):
         x = self.model(img_flat)
         mu = self.mu(x)
         logvar = self.logvar(x)
-        # Reparameterization trick
         std = torch.exp(0.5 * logvar)
         eps = torch.randn_like(std)
         z = mu + eps * std
@@ -77,32 +76,30 @@ class Decoder(nn.Module):
             nn.BatchNorm1d(512),
             nn.LeakyReLU(0.2, inplace=True),
             nn.Linear(512, int(np.prod(img_shape))),
-            # Output logits for NLL loss (no Sigmoid here)
         )
 
     def forward(self, z):
         img_flat = self.model(z)
         img = img_flat.view(img_flat.shape[0], *img_shape)
-        return img  # Output logits for NLL loss
+        return img 
 
 class Discriminator(nn.Module):
     def __init__(self):
         super(Discriminator, self).__init__()
 
         self.model = nn.Sequential(
-            nn.Linear(opt.latent_dim, 256),
+            nn.Linear(opt.latent_dim, 256),  
             nn.LeakyReLU(0.2, inplace=True),
-            nn.Linear(256, 128),
+            nn.Linear(256, 128),            
             nn.LeakyReLU(0.2, inplace=True),
             nn.Linear(128, 1),
-            nn.Sigmoid(), 
+            nn.Sigmoid(),
         )
 
     def forward(self, z):
         validity = self.model(z)
         return validity
 
-# Loss functions
 adversarial_loss = torch.nn.BCELoss()
 nll_loss = torch.nn.BCEWithLogitsLoss()
 
@@ -123,7 +120,6 @@ transform = transforms.Compose([
     transforms.ToTensor(),
 ])
 
-
 train_loader, test_loader = get_mnist_loaders(
     batch_size=opt.batch_size,
     image_size=opt.img_size,
@@ -133,11 +129,11 @@ train_loader, test_loader = get_mnist_loaders(
     transform=transform
 )
 
-# Optimizers
+optimizer_D = torch.optim.Adam(discriminator.parameters(), lr=opt.lr * 0.5, betas=(opt.b1, opt.b2))
+
 optimizer_G = torch.optim.Adam(
-    itertools.chain(encoder.parameters(), decoder.parameters()), lr=opt.lr, betas=(opt.b1, opt.b2)
+    itertools.chain(encoder.parameters(), decoder.parameters()), lr=opt.lr * 1.5, betas=(opt.b1, opt.b2)
 )
-optimizer_D = torch.optim.Adam(discriminator.parameters(), lr=opt.lr, betas=(opt.b1, opt.b2))
 
 Tensor = torch.cuda.FloatTensor if cuda else torch.FloatTensor
 
@@ -154,15 +150,13 @@ discriminator_accs = []
 def sample_image(n_row, batches_done):
     z = Variable(Tensor(np.random.normal(0, 1, (n_row ** 2, opt.latent_dim))))
     gen_imgs = decoder(z)
-    gen_imgs = torch.sigmoid(gen_imgs)  # Apply sigmoid to logits for visualization
+    gen_imgs = torch.sigmoid(gen_imgs) 
     save_image(gen_imgs.data, "images/%d.png" % batches_done, nrow=n_row, normalize=True)
 
 def visualize_reconstructions(epoch, batches_done, real_imgs, decoded_imgs):
     real_imgs = real_imgs[:25]
     decoded_imgs = decoded_imgs[:25]
-    decoded_imgs = torch.sigmoid(decoded_imgs)  # Apply sigmoid to logits
-
-    # Create a grid of original and reconstructed images
+    decoded_imgs = torch.sigmoid(decoded_imgs)  
     comparison = torch.cat([real_imgs, decoded_imgs])
     save_image(comparison.data, "images/reconstruction_%d.png" % batches_done, nrow=5, normalize=True)
 
@@ -175,9 +169,9 @@ for epoch in range(opt.n_epochs):
 
         batches_done = epoch * len(train_loader) + i
 
-        # Adversarial ground truths
-        valid = Variable(Tensor(imgs.size(0), 1).fill_(1.0), requires_grad=False)
-        fake = Variable(Tensor(imgs.size(0), 1).fill_(0.0), requires_grad=False)
+        # Adversarial ground truths with label smoothing
+        valid = Variable(Tensor(imgs.size(0), 1).fill_(0.9), requires_grad=False) 
+        fake = Variable(Tensor(imgs.size(0), 1).fill_(0.1), requires_grad=False)   
 
         # Configure input
         real_imgs = Variable(imgs.type(Tensor))
@@ -201,7 +195,7 @@ for epoch in range(opt.n_epochs):
         kld_loss = -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp())
         kld_loss /= imgs.size(0) * np.prod(img_shape)  # Normalize
 
-        # Total generator loss
+        # Total generator loss with adjusted loss weighting
         g_loss = 0.001 * g_loss_adv + 0.999 * reconstruction_loss + 0.1 * kld_loss
 
         g_loss.backward()
@@ -216,9 +210,14 @@ for epoch in range(opt.n_epochs):
         # Sample noise as discriminator ground truth
         z = Variable(Tensor(np.random.normal(0, 1, (imgs.size(0), opt.latent_dim))))
 
+        # Add noise to discriminator inputs
+        noise_factor = 0.1
+        z_real = z + noise_factor * torch.randn_like(z)
+        z_fake = encoded_imgs.detach() + noise_factor * torch.randn_like(encoded_imgs.detach())
+
         # Measure discriminator's ability to classify real from generated samples
-        real_loss = adversarial_loss(discriminator(z), valid)
-        fake_loss = adversarial_loss(discriminator(encoded_imgs.detach()), fake)
+        real_loss = adversarial_loss(discriminator(z_real), valid)
+        fake_loss = adversarial_loss(discriminator(z_fake), fake)
         d_loss = 0.5 * (real_loss + fake_loss)
 
         d_loss.backward()
@@ -227,8 +226,8 @@ for epoch in range(opt.n_epochs):
         # Calculate discriminator accuracy
         with torch.no_grad():
             # Predictions for real and fake latent codes
-            pred_real = discriminator(z)
-            pred_fake = discriminator(encoded_imgs.detach())
+            pred_real = discriminator(z_real)
+            pred_fake = discriminator(z_fake)
 
             # Threshold predictions at 0.5
             acc_real = (pred_real >= 0.5).float()
@@ -272,6 +271,8 @@ for epoch in range(opt.n_epochs):
             visualize_reconstructions(epoch, batches_done, real_imgs, decoded_imgs)
 
     print(f"[Epoch {epoch + 1}/{opt.n_epochs}] Training completed.")
+
+print("Training completed.")
 
 # Save the models
 torch.save(encoder.state_dict(), "models/encoder.pth")
@@ -328,19 +329,17 @@ def visualize_latent_space(encoder, dataloader):
     labels = np.concatenate(labels, axis=0)
 
     # Use t-SNE to reduce dimensionality to 2D
-    from sklearn.manifold import TSNE
     tsne = TSNE(n_components=2, random_state=42)
     latents_2d = tsne.fit_transform(latents)
 
     # Plot the latent space
     plt.figure(figsize=(8, 6))
-    scatter = plt.scatter(latents_2d[:, 0], latents_2d[:, 1], c=labels, cmap="tab10", alpha=0.6)
+    plt.scatter(latents_2d[:, 0], latents_2d[:, 1], c=labels, cmap="tab10", alpha=0.6)
     plt.colorbar()
     plt.title("t-SNE of Latent Representations")
     plt.xlabel("Dimension 1")
     plt.ylabel("Dimension 2")
     plt.savefig("images/latent_space.png")
     # plt.show()
-
 
 visualize_latent_space(encoder, test_loader)
