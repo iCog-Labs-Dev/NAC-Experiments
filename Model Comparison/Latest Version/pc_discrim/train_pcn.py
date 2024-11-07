@@ -53,8 +53,8 @@ x_dim = _X.shape[1]
 patch_shape = (int(jnp.sqrt(x_dim)), int(jnp.sqrt(x_dim)))
 y_dim = _Y.shape[1]
 
-n_iter = 5
-mb_size = 250
+n_iter = 50
+mb_size = 200
 n_batches = int(_X.shape[0]/mb_size)
 save_point = 5 ## save model params every modulo "save_point"
 
@@ -156,6 +156,7 @@ sim_time = time.time() - sim_start_time
 print("------------------------------------")
 print(f"Simulation Time = {sim_time / 3600.0} hrs")
 print(f"Best Dev Accuracy = {jnp.amax(jnp.asarray(acc_set))}")
+print(f"MSE = {jnp.mean(MSE)}  ± {jnp.std(MSE)}     ")
 
 
 jnp.save("exp/trAcc.npy", jnp.asarray(trAcc_set))
