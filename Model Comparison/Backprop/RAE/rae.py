@@ -76,3 +76,32 @@ def train(model, loader, optimizer, epoch):
     avg_loss = running_loss / len(loader)
     print(f'Epoch [{epoch}], MSE: {avg_loss:.4f}')
     return avg_loss
+
+def evaluate(model, loader):
+    model.eval()
+    eval_loss = 0.0
+    total_correct = 0
+    total_samples = 0
+    threshold = 0.1  
+
+    with torch.no_grad():
+        for batch_idx, (data, _) in enumerate(loader):
+            data = data.view(data.size(0), -1) 
+            reconstructed = model(data)
+            reconstructed = reconstructed.view(reconstructed.size(0), -1) 
+
+            loss = F.mse_loss(reconstructed, data)  
+            eval_loss += loss.item()
+
+            # Calculating accuracy
+            diff = torch.abs(reconstructed - data) 
+            correct = torch.sum(diff < threshold, dim=1)  
+            total_correct += correct.sum().item()  
+            total_samples += data.size(0) 
+
+    avg_loss = eval_loss / len(loader)
+    accuracy = total_correct / (total_samples * data.size(1)) * 100
+    
+    print(f'MSE: {avg_loss:.4f}, Accuracy: {accuracy:.2f}%')
+
+    return avg_loss, accuracy
