@@ -54,3 +54,25 @@ train_loader = DataLoader(dataset=train_dataset, batch_size=200, shuffle=True)
 
 dev_dataset = NumpyDataset(devX, devY)
 dev_loader = DataLoader(dataset=dev_dataset, batch_size=200, shuffle=False)
+
+def train(model, loader, optimizer, epoch):
+    model.train()
+    running_loss = 0.0
+    for batch_idx, (data, _) in enumerate(tqdm(loader)):
+        data = data.view(data.size(0), -1)  # Flatten the input data to shape (batch_size, input_dim)
+        optimizer.zero_grad()
+
+        reconstructed = model(data)
+        reconstructed = reconstructed.view(reconstructed.size(0), -1)  # Flatten the output to (batch_size, input_dim)
+
+        # MSE Loss for reconstruction
+        loss = F.mse_loss(reconstructed, data)
+
+        loss.backward()
+        optimizer.step()
+
+        running_loss += loss.item()
+
+    avg_loss = running_loss / len(loader)
+    print(f'Epoch [{epoch}], MSE: {avg_loss:.4f}')
+    return avg_loss
