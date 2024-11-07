@@ -1,343 +1,346 @@
-# General Imports
-import torch
-import torch.nn as nn
-import torch.optim as optim
-import torchvision
-import matplotlib.pyplot as plt
+import argparse
+import os
 import numpy as np
+import itertools
+import torchvision.transforms as transforms
+from torchvision.utils import save_image
+from torch.autograd import Variable
+import torch.nn as nn
+import torch
+import torch.nn.functional as F
 import random
-from sklearn.cluster import KMeans
-from scipy.stats import entropy
-from sklearn.decomposition import PCA
-from minst_data import get_mnist_loaders
+import matplotlib.pyplot as plt 
+from mnist_data import get_mnist_loaders
 
-# Set Random Seeds for Reproducibility
-seed = 42
-random.seed(seed)
-np.random.seed(seed)
-torch.manual_seed(seed)
-if torch.cuda.is_available():
-    torch.cuda.manual_seed(seed)
-    torch.cuda.manual_seed_all(seed)
-torch.backends.cudnn.deterministic = True
-torch.backends.cudnn.benchmark = False
+os.makedirs("images", exist_ok=True)
+os.makedirs("models", exist_ok=True)
 
-# Device Configuration
-device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-print(f'Using device: {device}')
+parser = argparse.ArgumentParser()
+parser.add_argument("--n_epochs", type=int, default=50, help="number of epochs of training")
+parser.add_argument("--batch_size", type=int, default=200, help="size of the batches")
+parser.add_argument("--lr", type=float, default=0.0002, help="adam: learning rate")
+parser.add_argument("--b1", type=float, default=0.5, help="adam: decay of first order momentum of gradient")
+parser.add_argument("--b2", type=float, default=0.999, help="adam: decay of second order momentum of gradient")
+parser.add_argument("--n_cpu", type=int, default=8, help="number of CPU threads for data loading")
+parser.add_argument("--latent_dim", type=int, default=10, help="dimensionality of the latent code")
+parser.add_argument("--img_size", type=int, default=32, help="size of each image dimension")
+parser.add_argument("--channels", type=int, default=1, help="number of image channels")
+parser.add_argument("--sample_interval", type=int, default=2000, help="interval between image sampling")
+opt = parser.parse_args()
+print(opt)
 
-# Hyperparameters
-latent_dim = 64
-batch_size = 128
-learning_rate = 0.0002
-num_epochs = 50  
+img_shape = (opt.channels, opt.img_size, opt.img_size)
 
+cuda = True if torch.cuda.is_available() else False
 
-train_loader, test_loader = get_mnist_loaders(batch_size=batch_size) 
-
+random.seed(42)
+np.random.seed(42)
+torch.manual_seed(42)
+if cuda:
+    torch.cuda.manual_seed(42)
 
 class Encoder(nn.Module):
-    def __init__(self, latent_dim):
+    def __init__(self):
         super(Encoder, self).__init__()
+
         self.model = nn.Sequential(
-            nn.Linear(28*28, 512),
-            nn.ReLU(True),
-            nn.Linear(512, latent_dim)
+            nn.Linear(int(np.prod(img_shape)), 512),
+            nn.LeakyReLU(0.2, inplace=True),
+            nn.Linear(512, 512),
+            nn.BatchNorm1d(512),
+            nn.LeakyReLU(0.2, inplace=True),
         )
 
-    def forward(self, x):
-        x = x.view(-1, 28*28)
-        z = self.model(x)
-        return z
+        # Output both mean and log variance for latent variables
+        self.mu = nn.Linear(512, opt.latent_dim)
+        self.logvar = nn.Linear(512, opt.latent_dim)
 
+    def forward(self, img):
+        img_flat = img.view(img.shape[0], -1)
+        x = self.model(img_flat)
+        mu = self.mu(x)
+        logvar = self.logvar(x)
+        # Reparameterization trick
+        std = torch.exp(0.5 * logvar)
+        eps = torch.randn_like(std)
+        z = mu + eps * std
+        return z, mu, logvar
 
 class Decoder(nn.Module):
-    def __init__(self, latent_dim):
+    def __init__(self):
         super(Decoder, self).__init__()
+
         self.model = nn.Sequential(
-            nn.Linear(latent_dim, 512),
-            nn.ReLU(True),
-            nn.Linear(512, 28*28),
-            nn.Tanh()
+            nn.Linear(opt.latent_dim, 512),
+            nn.LeakyReLU(0.2, inplace=True),
+            nn.Linear(512, 512),
+            nn.BatchNorm1d(512),
+            nn.LeakyReLU(0.2, inplace=True),
+            nn.Linear(512, int(np.prod(img_shape))),
+            # Output logits for NLL loss (no Sigmoid here)
         )
 
     def forward(self, z):
-        x_recon = self.model(z)
-        x_recon = x_recon.view(-1, 1, 28, 28)
-        return x_recon
-
+        img_flat = self.model(z)
+        img = img_flat.view(img_flat.shape[0], *img_shape)
+        return img  # Output logits for NLL loss
 
 class Discriminator(nn.Module):
     def __init__(self):
         super(Discriminator, self).__init__()
+
         self.model = nn.Sequential(
-            nn.Linear(28*28, 512),
+            nn.Linear(opt.latent_dim, 256),
             nn.LeakyReLU(0.2, inplace=True),
-            nn.Linear(512, 1),
-            nn.Sigmoid()
+            nn.Linear(256, 128),
+            nn.LeakyReLU(0.2, inplace=True),
+            nn.Linear(128, 1),
+            nn.Sigmoid(), 
         )
 
-    def forward(self, x):
-        x = x.view(-1, 28*28)
-        validity = self.model(x)
+    def forward(self, z):
+        validity = self.model(z)
         return validity
 
-# Initialize Models
-encoder = Encoder(latent_dim).to(device)
-decoder = Decoder(latent_dim).to(device)
-discriminator = Discriminator().to(device)
+# Loss functions
+adversarial_loss = torch.nn.BCELoss()
+nll_loss = torch.nn.BCEWithLogitsLoss()
 
-# Function to Count Trainable Parameters
-def count_parameters(model):
-    return sum(p.numel() for p in model.parameters() if p.requires_grad)
+# Initialize generator and discriminator
+encoder = Encoder()
+decoder = Decoder()
+discriminator = Discriminator()
 
-print(f'Total parameters in Encoder: {count_parameters(encoder)}')
-print(f'Total parameters in Decoder: {count_parameters(decoder)}')
-print(f'Total parameters in Discriminator: {count_parameters(discriminator)}')
+if cuda:
+    encoder.cuda()
+    decoder.cuda()
+    discriminator.cuda()
+    adversarial_loss.cuda()
+    nll_loss.cuda()
 
-# Loss Functions
-adversarial_loss = nn.BCELoss()
-reconstruction_loss = nn.MSELoss()
+transform = transforms.Compose([
+    transforms.Resize(opt.img_size),
+    transforms.ToTensor(),
+])
+
+
+train_loader, test_loader = get_mnist_loaders(
+    batch_size=opt.batch_size,
+    image_size=opt.img_size,
+    num_workers=opt.n_cpu,
+    pin_memory=True,
+    download=True,
+    transform=transform
+)
 
 # Optimizers
-optimizer_G = optim.Adam(list(encoder.parameters()) + list(decoder.parameters()), lr=learning_rate)
-optimizer_D = optim.Adam(discriminator.parameters(), lr=learning_rate)
+optimizer_G = torch.optim.Adam(
+    itertools.chain(encoder.parameters(), decoder.parameters()), lr=opt.lr, betas=(opt.b1, opt.b2)
+)
+optimizer_D = torch.optim.Adam(discriminator.parameters(), lr=opt.lr, betas=(opt.b1, opt.b2))
 
-# Lists to Store Losses
+Tensor = torch.cuda.FloatTensor if cuda else torch.FloatTensor
+
+# Initialize lists to store losses
 g_losses = []
 d_losses = []
-gkl_list = []
-ndb_list = []
+recon_losses = []
+adv_losses = []
+mse_losses = []
+kld_losses = []
+nll_losses = []
+discriminator_accs = []
 
-# Evaluation Functions
+def sample_image(n_row, batches_done):
+    z = Variable(Tensor(np.random.normal(0, 1, (n_row ** 2, opt.latent_dim))))
+    gen_imgs = decoder(z)
+    gen_imgs = torch.sigmoid(gen_imgs)  # Apply sigmoid to logits for visualization
+    save_image(gen_imgs.data, "images/%d.png" % batches_done, nrow=n_row, normalize=True)
 
-def compute_gkl_pca(real_samples, generated_samples, n_components=50, epsilon=1e-6):
-    """
-    Computes the Gaussian KL Divergence between real and generated samples after PCA.
+def visualize_reconstructions(epoch, batches_done, real_imgs, decoded_imgs):
+    real_imgs = real_imgs[:25]
+    decoded_imgs = decoded_imgs[:25]
+    decoded_imgs = torch.sigmoid(decoded_imgs)  # Apply sigmoid to logits
 
-    Args:
-        real_samples (torch.Tensor): Real images tensor of shape [N, C, H, W].
-        generated_samples (torch.Tensor): Generated images tensor of shape [N, C, H, W].
-        n_components (int): Number of PCA components.
-        epsilon (float): Small value to add to the diagonal for numerical stability.
-        
-    Returns:
-        float: G-KL divergence value.
-    """
-    # Flatten the images and convert to NumPy
-    real_flat = real_samples.view(real_samples.size(0), -1).cpu().numpy()
-    gen_flat = generated_samples.view(generated_samples.size(0), -1).cpu().numpy()
-    
-    # Perform PCA
-    pca = PCA(n_components=n_components, random_state=42)
-    pca.fit(real_flat)
-    real_pca = pca.transform(real_flat)
-    gen_pca = pca.transform(gen_flat)
-    
-    # Compute means
-    mean_real = np.mean(real_pca, axis=0)
-    mean_gen = np.mean(gen_pca, axis=0)
-    
-    # Compute covariance matrices
-    cov_real = np.cov(real_pca, rowvar=False) + epsilon * np.eye(n_components)
-    cov_gen = np.cov(gen_pca, rowvar=False) + epsilon * np.eye(n_components)
-    
-    # Compute KL Divergence between two Gaussians
-    try:
-        inv_cov_gen = np.linalg.inv(cov_gen)
-        diff = mean_gen - mean_real
-        term1 = np.trace(inv_cov_gen @ cov_real)
-        term2 = diff.T @ inv_cov_gen @ diff
-        term3 = -n_components
-        term4 = np.log((np.linalg.det(cov_gen) + epsilon) / (np.linalg.det(cov_real) + epsilon))
-        gkl = 0.5 * (term1 + term2 + term3 + term4)
-        return gkl
-    except np.linalg.LinAlgError as e:
-        print(f"LinAlgError during G-KL computation: {e}")
-        return float('inf')
-    except Exception as e:
-        print(f"Error computing G-KL with numpy: {e}")
-        return float('inf')
+    # Create a grid of original and reconstructed images
+    comparison = torch.cat([real_imgs, decoded_imgs])
+    save_image(comparison.data, "images/reconstruction_%d.png" % batches_done, nrow=5, normalize=True)
 
-def compute_ndb(real_samples, generated_samples, num_bins=20, threshold_ratio=0.05):
-    """
-    Computes the Number of Statistically Different Bins (NDB) between real and generated samples.
+# ----------
+#  Training
+# ----------
 
-    Args:
-        real_samples (torch.Tensor): Real images tensor of shape [N, C, H, W].
-        generated_samples (torch.Tensor): Generated images tensor of shape [N, C, H, W].
-        num_bins (int): Number of clusters/bins for K-Means.
-        threshold_ratio (float): Ratio to determine significant difference.
-
-    Returns:
-        int: Number of statistically different bins.
-    """
-    # Flatten the images and convert to NumPy
-    real_flat = real_samples.view(real_samples.size(0), -1).cpu().numpy()
-    gen_flat = generated_samples.view(generated_samples.size(0), -1).cpu().numpy()
-    
-    # Combine data for K-Means clustering
-    combined = np.vstack((real_flat, gen_flat))
-    
-    # Perform K-Means clustering
-    kmeans = KMeans(n_clusters=num_bins, random_state=42)
-    kmeans.fit(combined)
-    
-    # Assign clusters
-    real_clusters = kmeans.predict(real_flat)
-    gen_clusters = kmeans.predict(gen_flat)
-    
-    # Count frequencies
-    real_counts = np.bincount(real_clusters, minlength=num_bins)
-    gen_counts = np.bincount(gen_clusters, minlength=num_bins)
-    
-    # Define a threshold for statistical difference
-    threshold = threshold_ratio * real_counts
-    differences = np.abs(real_counts - gen_counts)
-    
-    # Count bins where difference exceeds threshold
-    ndb = np.sum(differences > threshold)
-    return ndb
-
-# Training Loop
-for epoch in range(num_epochs):
-    encoder.train()
-    decoder.train()
-    discriminator.train()
+for epoch in range(opt.n_epochs):
     for i, (imgs, _) in enumerate(train_loader):
-        real_imgs = imgs.to(device)
-        batch_size_i = real_imgs.size(0)
 
-        # Labels
-        valid = torch.ones(batch_size_i, 1, device=device)
-        fake = torch.zeros(batch_size_i, 1, device=device)
+        batches_done = epoch * len(train_loader) + i
 
+        # Adversarial ground truths
+        valid = Variable(Tensor(imgs.size(0), 1).fill_(1.0), requires_grad=False)
+        fake = Variable(Tensor(imgs.size(0), 1).fill_(0.0), requires_grad=False)
+
+        # Configure input
+        real_imgs = Variable(imgs.type(Tensor))
+
+        # -----------------
         #  Train Generator
+        # -----------------
+
         optimizer_G.zero_grad()
 
-        z = encoder(real_imgs)
-        recon_imgs = decoder(z)
+        encoded_imgs, mu, logvar = encoder(real_imgs)
+        decoded_imgs = decoder(encoded_imgs)
 
-        g_adv_loss = adversarial_loss(discriminator(recon_imgs), valid)
-        g_recon_loss = reconstruction_loss(recon_imgs, real_imgs)
-        g_loss = 0.001 * g_adv_loss + 0.999 * g_recon_loss
+        # Adversarial loss
+        g_loss_adv = adversarial_loss(discriminator(encoded_imgs), valid)
+
+        # Reconstruction loss using NLL (BCE with logits)
+        reconstruction_loss = nll_loss(decoded_imgs, real_imgs)
+
+        # KL Divergence
+        kld_loss = -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp())
+        kld_loss /= imgs.size(0) * np.prod(img_shape)  # Normalize
+
+        # Total generator loss
+        g_loss = 0.001 * g_loss_adv + 0.999 * reconstruction_loss + 0.1 * kld_loss
 
         g_loss.backward()
         optimizer_G.step()
 
+        # ---------------------
         #  Train Discriminator
+        # ---------------------
+
         optimizer_D.zero_grad()
 
-        # Discriminator losses
-        real_loss = adversarial_loss(discriminator(real_imgs), valid)
-        fake_loss = adversarial_loss(discriminator(recon_imgs.detach()), fake)
+        # Sample noise as discriminator ground truth
+        z = Variable(Tensor(np.random.normal(0, 1, (imgs.size(0), opt.latent_dim))))
+
+        # Measure discriminator's ability to classify real from generated samples
+        real_loss = adversarial_loss(discriminator(z), valid)
+        fake_loss = adversarial_loss(discriminator(encoded_imgs.detach()), fake)
         d_loss = 0.5 * (real_loss + fake_loss)
 
         d_loss.backward()
         optimizer_D.step()
 
+        # Calculate discriminator accuracy
+        with torch.no_grad():
+            # Predictions for real and fake latent codes
+            pred_real = discriminator(z)
+            pred_fake = discriminator(encoded_imgs.detach())
+
+            # Threshold predictions at 0.5
+            acc_real = (pred_real >= 0.5).float()
+            acc_fake = (pred_fake < 0.5).float()
+
+            # Compute accuracy
+            discriminator_acc = torch.mean(torch.cat((acc_real, acc_fake), 0))
+            discriminator_accs.append(discriminator_acc.item())
+
+        # Compute MSE for monitoring
+        mse = F.mse_loss(torch.sigmoid(decoded_imgs), real_imgs)
+
         # Save losses for plotting
         g_losses.append(g_loss.item())
         d_losses.append(d_loss.item())
+        recon_losses.append(reconstruction_loss.item())
+        adv_losses.append(g_loss_adv.item())
+        mse_losses.append(mse.item())
+        kld_losses.append(kld_loss.item())
+        nll_losses.append(reconstruction_loss.item())
 
-        # Print progress
-        if (i+1) % 200 == 0:
-            print(f"Epoch [{epoch+1}/{num_epochs}] Batch {i+1}/{len(train_loader)} \
-                  Loss D: {d_loss.item():.4f}, Loss G: {g_loss.item():.4f}")
+        print(
+            "[Epoch %d/%d] [Batch %d/%d] [D loss: %f] [G loss: %f] [Adv loss: %f] [Recon loss(NLL): %f] [KL-D: %f] [Acc: %.2f%%] [MSE: %f]"
+            % (
+                epoch + 1,
+                opt.n_epochs,
+                i + 1,
+                len(train_loader),
+                d_loss.item(),
+                g_loss.item(),
+                g_loss_adv.item(),
+                reconstruction_loss.item(),
+                kld_loss.item(),
+                100 * discriminator_acc.item(),
+                mse.item(),
+            )
+        )
 
-    # Save reconstructed images every epoch
-    save_interval = 20  
-    if (epoch + 1) % save_interval == 0 or epoch == num_epochs - 1:
-        encoder.eval()
-        decoder.eval()
-        
-        with torch.no_grad():
-            sample = recon_imgs[:16]
-            sample = sample * 0.5 + 0.5  
-            grid = torchvision.utils.make_grid(sample, nrow=4)
-            plt.imshow(grid.permute(1, 2, 0).cpu().numpy())
-            plt.title(f'Epoch {epoch+1}')
-            plt.axis('off')
-            plt.savefig(f'reconstructed_epoch_{epoch+1}.png')
-            plt.close()  # Close the figure to free memory
+        if batches_done % opt.sample_interval == 0:
+            sample_image(n_row=10, batches_done=batches_done)
+            visualize_reconstructions(epoch, batches_done, real_imgs, decoded_imgs)
 
-# Plot loss curves after training
-plt.figure(figsize=(10,5))
-plt.title("Generator and Discriminator Loss During Training")
-plt.plot(g_losses, label='Generator Loss')
-plt.plot(d_losses, label='Discriminator Loss')
-plt.xlabel('Iterations')
-plt.ylabel('Loss')
-plt.legend()
-plt.savefig('loss_curves.png')
-plt.close()
+    print(f"[Epoch {epoch + 1}/{opt.n_epochs}] Training completed.")
 
-# Evaluation on test data
-encoder.eval()
-decoder.eval()
-test_loss = 0
-all_real = []
-all_gen = []
+# Save the models
+torch.save(encoder.state_dict(), "models/encoder.pth")
+torch.save(decoder.state_dict(), "models/decoder.pth")
+torch.save(discriminator.state_dict(), "models/discriminator.pth")
 
-with torch.no_grad():
-    for imgs, _ in test_loader:
-        real_imgs = imgs.to(device)
-        z = encoder(real_imgs)
-        recon_imgs = decoder(z)
-        loss = reconstruction_loss(recon_imgs, real_imgs)
-        test_loss += loss.item() * real_imgs.size(0)
-        
-        # Collect samples for G-KL and NDB
-        all_real.append(real_imgs.cpu())
-        all_gen.append(recon_imgs.cpu())
+# Plot the training losses
+def plot_losses(g_losses, d_losses, recon_losses, adv_losses, mse_losses, kld_losses, nll_losses):
+    iterations = range(len(g_losses))
+    plt.figure(figsize=(10, 5))
+    plt.title("Generator and Discriminator Loss During Training")
+    plt.plot(iterations, g_losses, label="G loss")
+    plt.plot(iterations, d_losses, label="D loss")
+    plt.xlabel("Iterations")
+    plt.ylabel("Loss")
+    plt.legend()
+    plt.savefig("images/losses.png")
+    # plt.show()
 
-test_loss /= len(test_loader.dataset)
-print(f'Test Reconstruction MSE Loss: {test_loss:.6f}')
+    plt.figure(figsize=(10, 5))
+    plt.title("Reconstruction (NLL) and Adversarial Loss During Training")
+    plt.plot(iterations, recon_losses, label="NLL loss")
+    plt.plot(iterations, adv_losses, label="Adversarial loss")
+    plt.xlabel("Iterations")
+    plt.ylabel("Loss")
+    plt.legend()
+    plt.savefig("images/recon_adv_losses.png")
+    # plt.show()
 
-# Concatenate all samples
-all_real = torch.cat(all_real, dim=0)
-all_gen = torch.cat(all_gen, dim=0)
+    plt.figure(figsize=(10, 5))
+    plt.title("MSE and KL-Divergence During Training")
+    plt.plot(iterations, mse_losses, label="MSE")
+    plt.plot(iterations, kld_losses, label="KL-D")
+    plt.xlabel("Iterations")
+    plt.ylabel("Loss")
+    plt.legend()
+    plt.savefig("images/mse_kld.png")
+    # plt.show()
 
-# Compute G-KL Divergence using PCA
-gkl = compute_gkl_pca(all_real, all_gen, n_components=50)
-print(f'Gaussian KL Divergence (G-KL): {gkl:.6f}')
+plot_losses(g_losses, d_losses, recon_losses, adv_losses, mse_losses, kld_losses, nll_losses)
 
-# Compute Number of Statistically Different Bins (NDB)
-ndb = compute_ndb(all_real, all_gen, num_bins=20, threshold_ratio=0.05)
-print(f'Number of Statistically Different Bins (NDB): {ndb}')
+# Visualize the latent space
+def visualize_latent_space(encoder, dataloader):
+    encoder.eval()
+    latents = []
+    labels = []
+    with torch.no_grad():
+        for imgs, targets in dataloader:
+            imgs = imgs.type(Tensor)
+            _, mu, _ = encoder(imgs)
+            latents.append(mu.cpu().numpy())
+            labels.append(targets.numpy())
+    latents = np.concatenate(latents, axis=0)
+    labels = np.concatenate(labels, axis=0)
 
-# Optionally Save Evaluation Metrics
-with open('evaluation_metrics.txt', 'w') as f:
-    f.write(f'Test Reconstruction MSE Loss: {test_loss:.6f}\n')
-    f.write(f'Gaussian KL Divergence (G-KL): {gkl:.6f}\n')
-    f.write(f'Number of Statistically Different Bins (NDB): {ndb}\n')
+    # Use t-SNE to reduce dimensionality to 2D
+    from sklearn.manifold import TSNE
+    tsne = TSNE(n_components=2, random_state=42)
+    latents_2d = tsne.fit_transform(latents)
 
-# Save a batch of original and reconstructed images from test set
-with torch.no_grad():
-    for imgs, _ in test_loader:
-        real_imgs = imgs.to(device)
-        z = encoder(real_imgs)
-        recon_imgs = decoder(z)
-        break  # Take only the first batch
+    # Plot the latent space
+    plt.figure(figsize=(8, 6))
+    scatter = plt.scatter(latents_2d[:, 0], latents_2d[:, 1], c=labels, cmap="tab10", alpha=0.6)
+    plt.colorbar()
+    plt.title("t-SNE of Latent Representations")
+    plt.xlabel("Dimension 1")
+    plt.ylabel("Dimension 2")
+    plt.savefig("images/latent_space.png")
+    # plt.show()
 
-    # Original images
-    originals = real_imgs[:16]
-    originals = originals * 0.5 + 0.5 
-    grid_originals = torchvision.utils.make_grid(originals, nrow=4)
-    plt.imshow(grid_originals.permute(1, 2, 0).cpu().numpy())
-    plt.title('Original Images')
-    plt.axis('off')
-    plt.savefig('original_images.png')
-    plt.close()
 
-    # Reconstructed images
-    reconstructions = recon_imgs[:16]
-    reconstructions = reconstructions * 0.5 + 0.5  # Denormalize
-    grid_reconstructions = torchvision.utils.make_grid(reconstructions, nrow=4)
-    plt.imshow(grid_reconstructions.permute(1, 2, 0).cpu().numpy())
-    plt.title('Reconstructed Images')
-    plt.axis('off')
-    plt.savefig('reconstructed_images_test.png')
-    plt.close()
-
-print("Training complete. Loss curves, evaluation metrics, and sample images have been saved.")
+visualize_latent_space(encoder, test_loader)
