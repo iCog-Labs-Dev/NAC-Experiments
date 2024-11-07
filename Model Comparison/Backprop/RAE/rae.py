@@ -5,8 +5,8 @@ import torch.nn.functional as F
 import numpy as np
 from tqdm import tqdm
 from rae_model import RegularizedAutoencoder  
-import sys, getopt as gopt, optparse, time
-
+import sys, getopt as gopt
+from ngclearn.utils.metric_utils import measure_KLD
 class NumpyDataset(Dataset):
     def __init__(self, dataX, dataY=None):
         self.dataX = np.load(dataX) 
@@ -65,7 +65,7 @@ def train(model, loader, optimizer, epoch):
         reconstructed = model(data)
         reconstructed = reconstructed.view(reconstructed.size(0), -1)  # Flatten the output to (batch_size, input_dim)
 
-        # MSE Loss for reconstruction
+        # MSE loss for reconstruction
         loss = F.mse_loss(reconstructed, data)
 
         loss.backward()
@@ -83,7 +83,7 @@ def evaluate(model, loader):
     total_correct = 0
     total_samples = 0
     threshold = 0.1  
-
+    total_kld = 0.0
     with torch.no_grad():
         for batch_idx, (data, _) in enumerate(loader):
             data = data.view(data.size(0), -1) 
@@ -92,6 +92,13 @@ def evaluate(model, loader):
 
             loss = F.mse_loss(reconstructed, data)  
             eval_loss += loss.item()
+            
+            data_np = data.cpu().numpy()
+            reconstructed_np = reconstructed.cpu().numpy()
+
+            # Calculating KLD
+            kld = measure_KLD(data_np, reconstructed_np)
+            total_kld = kld.item()
 
             # Calculating accuracy
             diff = torch.abs(reconstructed - data) 
@@ -101,7 +108,17 @@ def evaluate(model, loader):
 
     avg_loss = eval_loss / len(loader)
     accuracy = total_correct / (total_samples * data.size(1)) * 100
+    avg_kld = total_kld / len(loader)
     
-    print(f'MSE: {avg_loss:.4f}, Accuracy: {accuracy:.2f}%')
+    print(f'MSE: {avg_loss:.4f}, Accuracy: {accuracy:.2f}%, KLD: {avg_kld:.4f}')
 
-    return avg_loss, accuracy
+    return avg_loss, accuracy, avg_kld
+
+num_epochs = 50
+
+for epoch in range(1, num_epochs + 1):
+    train_loss = train(model, train_loader, optimizer, epoch)
+    eval_loss, eval_accuracy, eval_kld = evaluate(model, dev_loader)
+
+    print(f'Epoch [{epoch}/{num_epochs}]')
+    print(f'Train MSE: {train_loss:.4f}, Eval MSE: {eval_loss:.4f}, Eval Accuracy: {eval_accuracy:.2f}%, Eval KLD: {eval_kld:.4f}')
