@@ -5,7 +5,7 @@ import torch.nn.functional as F
 import numpy as np
 from tqdm import tqdm
 from rae_model import RegularizedAutoencoder  
-import sys, getopt as gopt
+import sys, getopt as gopt, time
 from ngclearn.utils.metric_utils import measure_KLD
 class NumpyDataset(Dataset):
     def __init__(self, dataX, dataY=None):
@@ -115,6 +115,7 @@ def evaluate(model, loader):
     return avg_loss, accuracy, avg_kld
 
 num_epochs = 50
+sim_start_time = time.time()  # Start time profiling
 
 for epoch in range(1, num_epochs + 1):
     train_loss = train(model, train_loader, optimizer, epoch)
@@ -122,3 +123,8 @@ for epoch in range(1, num_epochs + 1):
 
     print(f'Epoch [{epoch}/{num_epochs}]')
     print(f'Train MSE: {train_loss:.4f}, Eval MSE: {eval_loss:.4f}, Eval Accuracy: {eval_accuracy:.2f}%, Eval KLD: {eval_kld:.4f}')
+
+# Stop time profiling
+sim_time = time.time() - sim_start_time
+print("------------------------------------")
+print(f"Simulation Time = {sim_time / 3600.0} hrs")
