@@ -227,14 +227,43 @@ for i in range(n_iter):
 
 #  Testing the model
 print("--- Testing the Model ---")
+inference_start_time = time.time()
 test_nll, test_acc, test_mse, test_bce, test_kld = eval_model(
     model, testX, testY, mb_size=1000, verbosity=1
 )
+inference_time = time.time() - inference_start_time
+print("------------------------------------")
+print(f"Inference Time = {inference_time} seconds")
 print("{}: Test: Acc = {}  NLL = {}  MSE = {} BCE = {} KLD = {}".format(i, test_acc, test_nll, test_mse, test_bce, test_kld))
 
+testAcc_set = []
+testNll_set = []
+testMse_set = []
+testBce_set = []
+testKld_set = []
+
+# Save the test values
+testAcc_set.append(test_acc)
+testNll_set.append(test_nll)
+testMse_set.append(test_mse)
+testBce_set.append(test_bce)
+testKld_set.append(test_kld)
+
+jnp.save("exp/testAcc.npy", jnp.asarray(testAcc_set))
+jnp.save("exp/testNll.npy", jnp.asarray(testNll_set))
+jnp.save("exp/testMse.npy", jnp.asarray(testMse_set))
+jnp.save("exp/testBce.npy", jnp.asarray(testBce_set))
+jnp.save("exp/testKld.npy", jnp.asarray(testKld_set))
 
 # Stop time profiling
 sim_time = time.time() - sim_start_time
 print("------------------------------------")
-print(f"Simulation Time = {sim_time / 3600.0} hrs")
+print(f"Training Time = {sim_time} seconds")
 print(f"Best Dev Accuracy = {jnp.amax(jnp.asarray(acc_set))}")
+
+print("--- Best Test Values ---")
+print(f"Best Test Accuracy = {jnp.amax(jnp.asarray(testAcc_set))}")
+print(f"Best Test NLL = {jnp.amin(jnp.asarray(testNll_set))}")
+print(f"Best Test MSE = {jnp.amin(jnp.asarray(testMse_set))}")
+print(f"Best Test BCE = {jnp.amin(jnp.asarray(testBce_set))}")
+print(f"Best Test KLD = {jnp.amin(jnp.asarray(testKld_set))}")
