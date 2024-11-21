@@ -1,7 +1,6 @@
 from jax import numpy as jnp, random, nn, jit
 import sys, getopt as gopt, optparse, time
-from bfasnn_model import BFA_SNN as Model  # bring in model from museum
-# bring in ngc-learn analysis tools
+from bfasnn_model import BFA_SNN as Model  
 from ngclearn.utils.metric_utils import measure_ACC, measure_CatNLL, measure_MSE, measure_BCE, measure_KLD
 
 """
@@ -102,8 +101,8 @@ def eval_model(model, Xdev, Ydev, mb_size, verbosity=1):  # evals model's test-t
         _S, yMu, yCnt = model.process(obs=Xb, lab=Yb, adapt_synapses=False, label_dist_estimator=lab_estimator)
         # record metric measurements
         _nll = measure_CatNLL(yMu, Yb) * Xb.shape[0]  # un-normalize score
-        _acc = measure_ACC(yMu, Yb) * Yb.shape[0]  # un-normalize score
-        _mse = measure_MSE(yMu, Yb) * Yb.shape[0]  # un-normalize score
+        _acc = measure_ACC(yMu, Yb) * Yb.shape[0]  
+        _mse = measure_MSE(yMu, Yb) * Yb.shape[0] 
         _bce = measure_BCE(yMu, Yb) * Yb.shape[0]
         _kld = measure_KLD(yMu, Yb) * Yb.shape[0]
         nll += _nll
@@ -123,7 +122,7 @@ def eval_model(model, Xdev, Ydev, mb_size, verbosity=1):  # evals model's test-t
     if verbosity > 0:
         print()
     nll = nll / (Xdev.shape[0])  # calc full dev-set nll
-    acc = acc / (Xdev.shape[0])  # calc full dev-set acc
+    acc = acc / (Xdev.shape[0]) 
     mse = mse / (Xdev.shape[0]) 
     bce = bce / (Xdev.shape[0])
     kld = kld / (Xdev.shape[0])
@@ -185,7 +184,7 @@ for i in range(n_iter):
         _S, yMu, yCnt = model.process(obs=Xb, lab=Yb, adapt_synapses=True, label_dist_estimator=lab_estimator)
         # track "online" training log likelihood and accuracy
         tr_nll += measure_CatNLL(yMu, Yb) * mb_size  # un-normalize score
-        tr_acc += measure_ACC(yCnt, Yb) * mb_size  # un-normalize score
+        tr_acc += measure_ACC(yCnt, Yb) * mb_size 
         n_samp_seen += Yb.shape[0]
         if verbosity >= 1:
             wStats = ""  # model.get_synapse_stats()
@@ -259,7 +258,21 @@ jnp.save("exp/testKld.npy", jnp.asarray(testKld_set))
 sim_time = time.time() - sim_start_time
 print("------------------------------------")
 print(f"Training Time = {sim_time} seconds")
+
+print("--- Best Train Values ---")
+print(f"Best Train Accuracy = {jnp.amax(jnp.asarray(trAcc_set))}")
+print(f"Best Train NLL = {jnp.amin(jnp.asarray(trNll_set))}")
+
+print("--- Best Development Values ---")
 print(f"Best Dev Accuracy = {jnp.amax(jnp.asarray(acc_set))}")
+print(f"Best Dev NLL = {jnp.amin(jnp.asarray(nll_set))}")
+print(f"Best Dev MSE = {jnp.amin(jnp.asarray(mse_set))}")
+print(f"Best Dev BCE = {jnp.amin(jnp.asarray(bce_set))}")
+kld_set_array = jnp.asarray(kld_set)
+if kld_set_array.ndim == 0:
+    print(f"Best Dev KLD = {kld_set_array}")
+else:
+    print(f"Best Dev KLD = {jnp.amin(kld_set_array)}")
 
 print("--- Best Test Values ---")
 print(f"Best Test Accuracy = {jnp.amax(jnp.asarray(testAcc_set))}")
