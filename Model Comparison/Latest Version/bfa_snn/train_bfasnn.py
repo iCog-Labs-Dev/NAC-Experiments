@@ -31,6 +31,8 @@ dataX = "../../../data/mnist/trainX.npy"
 dataY = "../../../data/mnist/trainY.npy"
 devX = "../../../data/mnist/validX.npy"
 devY = "../../../data/mnist/validY.npy"
+testX = "../../../data/mnist/testX.npy"
+testY = "../../../data/mnist/testY.npy"
 verbosity = 0  # verbosity level (0 - fairly minimal, 1 - prints multiple lines on I/O)
 for opt, arg in options:
     if opt in ("--dataX"):
@@ -41,21 +43,28 @@ for opt, arg in options:
         devX = arg.strip()
     elif opt in ("--devY"):
         devY = arg.strip()
+    elif opt in ("--testX"):
+        devX = arg.strip()
+    elif opt in ("--testY"):
+        devX = arg.strip()
     elif opt in ("--verbosity"):
         verbosity = int(arg.strip())
 print("Train-set: X: {} | Y: {}".format(dataX, dataY))
 print("  Dev-set: X: {} | Y: {}".format(devX, devY))
+print("  Test-set: X: {} | Y: {}".format(testX, testY))
 
 _X = jnp.load(dataX)
 _Y = jnp.load(dataY)
 Xdev = jnp.load(devX)
 Ydev = jnp.load(devY)
+testX = jnp.load(testX)
+testY = jnp.load(testY)
 x_dim = _X.shape[1]
 patch_shape = (int(jnp.sqrt(x_dim)), int(jnp.sqrt(x_dim)))
 y_dim = _Y.shape[1]
 
 lab_estimator = "current"  # "voltage" or "spike"
-n_iter = 100  # number of discrete time steps to simulate
+n_iter = 1  # number of discrete time steps to simulate
 mb_size = 128
 n_batches = int(_X.shape[0] / mb_size)
 save_point = 5  # save model params every epoch/iteration modulo "save_point"
@@ -74,7 +83,7 @@ model = Model(subkeys[1], in_dim=x_dim, out_dim=y_dim, hid_dim=hid_dim, T=T, dt=
 model.save_to_disk()  # save initial state of synapses to disk
 print("--- Starting Simulation ---")
 
-
+# Evaluation model
 def eval_model(model, Xdev, Ydev, mb_size, verbosity=1):  # evals model's test-time inference performance
     n_batches = int(Xdev.shape[0] / mb_size)
 
@@ -115,7 +124,7 @@ def eval_model(model, Xdev, Ydev, mb_size, verbosity=1):  # evals model's test-t
         print()
     nll = nll / (Xdev.shape[0])  # calc full dev-set nll
     acc = acc / (Xdev.shape[0])  # calc full dev-set acc
-    mse = mse / (Xdev.shape[0])  # calc full dev-set mse
+    mse = mse / (Xdev.shape[0]) 
     bce = bce / (Xdev.shape[0])
     kld = kld / (Xdev.shape[0])
     return nll, acc, mse, bce, kld
@@ -130,6 +139,7 @@ bce_set = []
 kld_set = []
 
 sim_start_time = time.time()  # start time profiling
+print("--- Training the Model ---")
 
 tr_acc = 0.1
 nll, acc, mse, bce, kld = eval_model(model, Xdev, Ydev, mb_size=1000)
@@ -152,6 +162,7 @@ jnp.save("exp/mse.npy", jnp.asarray(mse_set))
 jnp.save("exp/bce.npy", jnp.asarray(bce_set))
 jnp.save("exp/kld.npy", jnp.asarray(kld_set))
 
+# Training Loop
 for i in range(n_iter):
     # shuffle data (to ensure i.i.d. assumption holds)
     dkey, *subkeys = random.split(dkey, 2)
@@ -184,7 +195,8 @@ for i in range(n_iter):
     if verbosity >= 1:
         print()
 
-    # evaluate current progress of model on dev-set
+    # Evaluate of model on dev-set
+    print("--- Evaluating the Model ---")
     nll, acc, mse, bce, kld  = eval_model(model, Xdev, Ydev, mb_size=1000)
     tr_acc = (tr_acc / n_samp_seen)
     tr_nll = (tr_nll / n_samp_seen)
@@ -212,6 +224,14 @@ for i in range(n_iter):
     mse_set.append(mse)
     bce_set.append(bce)
     kld_set.append(kld)
+
+#  Testing the model
+print("--- Testing the Model ---")
+test_nll, test_acc, test_mse, test_bce, test_kld = eval_model(
+    model, testX, testY, mb_size=1000, verbosity=1
+)
+print("{}: Test: Acc = {}  NLL = {}  MSE = {} BCE = {} KLD = {}".format(i, test_acc, test_nll, test_mse, test_bce, test_kld))
+
 
 # Stop time profiling
 sim_time = time.time() - sim_start_time
