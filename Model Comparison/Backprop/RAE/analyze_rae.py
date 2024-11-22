@@ -30,3 +30,24 @@ model.eval()
 # Load test dataset
 test_dataset = NumpyDataset(testX, testY)
 test_loader = DataLoader(dataset=test_dataset, batch_size=128, shuffle=False)
+
+def extract_latent_representations(model, loader):
+    model.eval()
+    latent_representations = []
+    labels = []
+    with torch.no_grad():
+        for data, label in loader:
+            data = data.view(data.size(0), -1)  # Flatten the input
+            latent = model.encoder(data)  # Get the latent representation
+            latent_representations.append(latent.cpu().numpy())
+            # Convert one-hot labels to scalar class indices
+            labels.append(label.argmax(dim=1).cpu().numpy())
+    latent_representations = np.concatenate(latent_representations, axis=0)
+    labels = np.concatenate(labels, axis=0)
+    
+    # Debugging size
+    print(f"Latent representations shape: {latent_representations.shape}")
+    print(f"Labels shape: {labels.shape}")
+    
+    assert latent_representations.shape[0] == labels.shape[0], "Mismatch between latent representations and labels"
+    return latent_representations, labels
