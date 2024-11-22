@@ -58,13 +58,13 @@ model = RegularizedAutoencoder(latent_dim=latent_dim)
 optimizer = optim.Adam(model.parameters(), lr=0.001)
 
 train_dataset = NumpyDataset(dataX, dataY)
-train_loader = DataLoader(dataset=train_dataset, batch_size=128, shuffle=True)
+train_loader = DataLoader(dataset=train_dataset, batch_size=200, shuffle=True)
 
 dev_dataset = NumpyDataset(devX, devY)
-dev_loader = DataLoader(dataset=dev_dataset, batch_size=128, shuffle=False)
+dev_loader = DataLoader(dataset=dev_dataset, batch_size=200, shuffle=False)
 
 test_dataset = NumpyDataset(testX, testY)
-test_loader = DataLoader(dataset=test_dataset, batch_size = 128, shuffle = False)
+test_loader = DataLoader(dataset=test_dataset, batch_size = 200, shuffle = False)
 
 def train(model, loader, optimizer, epoch):
     model.train()
@@ -91,6 +91,8 @@ def train(model, loader, optimizer, epoch):
         optimizer.step()
 
         running_loss += loss.item()
+        torch.save(model.state_dict(), "trained_model.pth")
+
 
     avg_loss = running_loss / len(loader)
     accuracy = total_correct / (total_samples * data.size(1)) * 100
@@ -134,7 +136,7 @@ def evaluate(model, loader):
 
     return avg_loss, accuracy, avg_kld
 
-num_epochs = 2
+num_epochs = 50
 sim_start_time = time.time()  # Start time profiling
 
 print("--------------- Training ---------------")
@@ -145,7 +147,7 @@ for epoch in range(1, num_epochs + 1):
 
 # Stop time profiling
 sim_time = time.time() - sim_start_time
-print(f"Training Time = {sim_time} seconds")
+print(f"Training Time = {sim_time:.4f} seconds")
 
 print("--------------- Evaluating ---------------")
 eval_loss, eval_accuracy, eval_kld = evaluate(model, dev_loader)
@@ -155,6 +157,6 @@ print("--------------- Testing ---------------")
 inference_start_time = time.time()
 test_loss, test_accuracy, test_kld = evaluate(model, test_loader)
 inference_time = time.time() - inference_start_time
-print(f"Inference Time = {inference_time} seconds")
+print(f"Inference Time = {inference_time:.4f} seconds")
 print(f'Test MSE: {test_loss:.4f}, Test Accuracy: {test_accuracy:.2f}%, Test KLD: {test_kld:.4f}')
 

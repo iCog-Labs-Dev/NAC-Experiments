@@ -31,7 +31,7 @@ class Decoder(nn.Module):
         return x_recon
 
 class RegularizedAutoencoder(nn.Module):
-    def __init__(self, latent_dim, learning_rate=0.0002, l2_lambda=1e-5):
+    def __init__(self, latent_dim, learning_rate=0.001, l2_lambda=1e-5):
         super(RegularizedAutoencoder, self).__init__() 
         self.encoder = Encoder(latent_dim) 
         self.decoder = Decoder(latent_dim)
