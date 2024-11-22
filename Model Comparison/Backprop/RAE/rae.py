@@ -137,16 +137,24 @@ def evaluate(model, loader):
 num_epochs = 2
 sim_start_time = time.time()  # Start time profiling
 
-for epoch in range(1, num_epochs + 1):
+print("--------------- Training ---------------")
+for epoch in range(1, num_epochs + 1): 
     train_loss, train_accuracy = train(model, train_loader, optimizer, epoch)
-    eval_loss, eval_accuracy, eval_kld = evaluate(model, dev_loader)
-    test_loss, test_accuracy, test_kld = evaluate(model, test_loader)
-
     print(f'Epoch [{epoch}/{num_epochs}]')
     print(f'Train MSE: {train_loss:.4f} Train Accuracy: {train_accuracy:.2f}%')
-    print(f'Eval MSE: {eval_loss:.4f}, Eval Accuracy: {eval_accuracy:.2f}%, Eval KLD: {eval_kld:.4f}')
-    print(f'Test MSE: {test_loss:.4f}, Test Accuracy: {test_accuracy:.2f}%, Test KLD: {test_kld:.4f}')
+
 # Stop time profiling
 sim_time = time.time() - sim_start_time
-print("------------------------------------")
-print(f"Simulation Time = {sim_time} seconds")
+print(f"Training Time = {sim_time} seconds")
+
+print("--------------- Evaluating ---------------")
+eval_loss, eval_accuracy, eval_kld = evaluate(model, dev_loader)
+print(f'Eval MSE: {eval_loss:.4f}, Eval Accuracy: {eval_accuracy:.2f}%, Eval KLD: {eval_kld:.4f}')
+
+print("--------------- Testing ---------------")
+inference_start_time = time.time()
+test_loss, test_accuracy, test_kld = evaluate(model, test_loader)
+inference_time = time.time() - inference_start_time
+print(f"Inference Time = {inference_time} seconds")
+print(f'Test MSE: {test_loss:.4f}, Test Accuracy: {test_accuracy:.2f}%, Test KLD: {test_kld:.4f}')
+
