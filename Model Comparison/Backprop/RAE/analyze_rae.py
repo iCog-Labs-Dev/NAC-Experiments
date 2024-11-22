@@ -79,6 +79,5 @@ def visualize_latent_space(latent_representations, labels, method="tsne", save_p
     plt.show()
 
 
-# Main Execution
 latent_representations, labels = extract_latent_representations(model, test_loader)
 visualize_latent_space(latent_representations, labels, method="tsne", save_path="latent_space.png")
