@@ -51,3 +51,34 @@ def extract_latent_representations(model, loader):
     
     assert latent_representations.shape[0] == labels.shape[0], "Mismatch between latent representations and labels"
     return latent_representations, labels
+
+def visualize_latent_space(latent_representations, labels, method="tsne", save_path="latent_space.png"):
+    if method == "tsne":
+        reducer = TSNE(n_components=2, random_state=42)
+    elif method == "pca":
+        reducer = PCA(n_components=2)
+    else:
+        raise ValueError("Unsupported dimensionality reduction method. Use 'tsne' or 'pca'.")
+    
+    # Dimensionality reduction
+    latent_2d = reducer.fit_transform(latent_representations)
+    
+    # Ensure 'c' argument matches the number of points
+    assert latent_2d.shape[0] == len(labels), "Mismatch between latent points and labels"
+    
+    # Create the scatter plot
+    plt.figure(figsize=(10, 8))
+    scatter = plt.scatter(latent_2d[:, 0], latent_2d[:, 1], c=labels, cmap='tab10', s=10, alpha=0.7)
+    plt.colorbar(scatter, label="Class")
+    plt.title("Latent Space Visualization")
+    plt.xlabel("Dimension 1")
+    plt.ylabel("Dimension 2")
+    plt.grid(True)
+    plt.savefig(save_path)
+    print(f"Latent space visualization saved to {save_path}")
+    plt.show()
+
+
+# Main Execution
+latent_representations, labels = extract_latent_representations(model, test_loader)
+visualize_latent_space(latent_representations, labels, method="tsne", save_path="latent_space.png")
