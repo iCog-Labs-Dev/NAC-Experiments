@@ -22,7 +22,7 @@ class Decoder(nn.Module):
             nn.Linear(latent_dim, 512),
             nn.ReLU(True),
             nn.Linear(512, 28 * 28),
-            nn.Tanh()
+            nn.Softmax(dim=-1) 
         )
 
     def forward(self, z):
@@ -36,6 +36,8 @@ class RegularizedAutoencoder(nn.Module):
         self.encoder = Encoder(latent_dim) 
         self.decoder = Decoder(latent_dim)
         self.reconstruction_loss = nn.MSELoss()
+        self.reconstruction_loss = nn.BCELoss() 
+        self.nll_loss = nn.NLLLoss()
         self.optimizer = torch.optim.Adam(
             list(self.encoder.parameters()) + list(self.decoder.parameters()), 
             lr=learning_rate, 
