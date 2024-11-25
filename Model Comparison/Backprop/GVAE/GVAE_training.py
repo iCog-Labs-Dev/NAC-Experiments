@@ -107,3 +107,52 @@ def train(model, loader, optimizer, epoch):
     accuracy = total_correct / (total_samples * data.size(1)) * 100
     print(f'Epoch [{epoch}], MSE: {avg_loss:.4f}, BCE: {avg_bce:.4f}, NLL: {avg_nll:.4f}, Accuracy: {accuracy}%')
     return avg_loss, avg_bce, avg_nll, accuracy
+
+def evaluate(model, loader):
+    model.eval()
+    eval_loss = 0.0
+    total_bce = 0.0
+    total_nll = 0.0
+    total_correct = 0
+    total_samples = 0
+    threshold = 0.1  
+    total_kld = 0.0
+    with torch.no_grad():
+        for batch_idx, (data, _) in enumerate(loader):
+            data = data.view(data.size(0), -1) 
+            reconstructed, mu, logvar = model(data)
+            reconstructed = reconstructed.view(reconstructed.size(0), -1) 
+
+            loss = F.mse_loss(reconstructed, data)  
+            eval_loss += loss.item()
+            
+            data_np = data.cpu().numpy()
+            reconstructed_np = reconstructed.cpu().numpy()
+            
+            # Calculating BCE
+            bce_loss = F.binary_cross_entropy(reconstructed, data)
+            total_bce += bce_loss.item()
+
+            # Calculating NLL
+            log_probs = torch.log(reconstructed + 1e-9)  # Add small value for numerical stability
+            nll_loss = F.nll_loss(log_probs, data.argmax(dim=-1))
+            total_nll += nll_loss.item()
+            # Calculating KLD
+            kld = measure_KLD(data_np, reconstructed_np)
+            total_kld = kld.item()
+
+            # Calculating accuracy
+            diff = torch.abs(reconstructed - data) 
+            correct = torch.sum(diff < threshold, dim=1)  
+            total_correct += correct.sum().item()  
+            total_samples += data.size(0) 
+
+    avg_loss = eval_loss / len(loader)
+    avg_bce = total_bce / len(loader)
+    avg_nll = total_nll / len(loader)
+    accuracy = total_correct / (total_samples * data.size(1)) * 100
+    avg_kld = total_kld / len(loader)
+    
+    print(f'MSE: {avg_loss:.4f}, BCE: {avg_bce:.4f}, NLL: {avg_nll:.4f}, Accuracy: {accuracy:.2f}%, KLD: {avg_kld:.4f}')
+
+    return avg_loss, avg_bce, avg_nll, avg_kld, accuracy
