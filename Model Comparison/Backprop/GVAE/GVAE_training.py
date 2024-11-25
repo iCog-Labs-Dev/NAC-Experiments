@@ -66,3 +66,44 @@ dev_loader = DataLoader(dataset=dev_dataset, batch_size=200, shuffle=False)
 
 test_dataset = NumpyDataset(testX, testY)
 test_loader = DataLoader(dataset=test_dataset, batch_size = 200, shuffle = False)
+
+def train(model, loader, optimizer, epoch):
+    model.train()
+    running_loss = 0.0
+    total_bce = 0.0
+    total_nll = 0.0
+    total_correct = 0
+    total_samples = 0
+    threshold = 0.1
+    for batch_idx, (data, _) in enumerate(tqdm(loader)):
+        data = data.view(data.size(0), -1)  # Flatten the input data to shape (batch_size, input_dim)
+        optimizer.zero_grad()
+
+        reconstructed, mu, logvar = model(data)
+        reconstructed = reconstructed.view(reconstructed.size(0), -1)  # Flatten the output to (batch_size, input_dim)
+        # Calculating accuracy
+        diff = torch.abs(reconstructed - data) 
+        correct = torch.sum(diff < threshold, dim=1)  
+        total_correct += correct.sum().item()  
+        total_samples += data.size(0)
+
+        # Loss for reconstruction
+        loss = F.mse_loss(reconstructed, data)
+        bce_loss = F.binary_cross_entropy(reconstructed, data)
+        log_probs = torch.log(reconstructed + 1e-9)  # Add small value for numerical stability
+        nll_loss = F.nll_loss(log_probs, data.argmax(dim=-1))
+        loss.backward()
+        optimizer.step()
+
+        running_loss += loss.item()
+        total_bce += bce_loss.item()
+        total_nll += nll_loss.item()
+        torch.save(model.state_dict(), "trained_model.pth")
+
+
+    avg_loss = running_loss / len(loader)
+    avg_bce = total_bce / len(loader)
+    avg_nll = total_nll / len(loader)
+    accuracy = total_correct / (total_samples * data.size(1)) * 100
+    print(f'Epoch [{epoch}], MSE: {avg_loss:.4f}, BCE: {avg_bce:.4f}, NLL: {avg_nll:.4f}, Accuracy: {accuracy}%')
+    return avg_loss, avg_bce, avg_nll, accuracy
