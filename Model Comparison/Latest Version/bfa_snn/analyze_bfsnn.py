@@ -3,7 +3,7 @@ import numpy as np
 import sys, getopt as gopt, optparse
 from bfasnn_model import load_model
 ## bring in ngc-learn analysis tools
-from ngclearn.utils.metric_utils import measure_ACC, measure_CatNLL
+from ngclearn.utils.metric_utils import measure_ACC, measure_CatNLL, measure_BCE, measure_MSE, measure_KLD
 from ngclearn.utils.viz.dim_reduce import extract_tsne_latents, plot_latents
 from bfasnn_model import BFA_SNN as Model ## bring in model from museum
 
@@ -42,6 +42,9 @@ def eval_model(model, Xdev, Ydev, mb_size, verbosity=1):
     n_samp_seen = 0
     nll = 0. ## negative Categorical log liklihood
     acc = 0. ## accuracy
+    mse = 0  
+    bce = 0 
+    kld = 0
     for j in range(n_batches):
         ## extract data block/batch
         idx = j * mb_size
@@ -58,20 +61,32 @@ def eval_model(model, Xdev, Ydev, mb_size, verbosity=1):
             _acc = measure_ACC(yCnt, Yb) * Yb.shape[0] ## un-normalize score
         else:
             _acc = measure_ACC(yMu, Yb) * Yb.shape[0] ## un-normalize score
+        _mse = measure_MSE(yMu, Yb) * Yb.shape[0] 
+        _bce = measure_BCE(yMu, Yb) * Yb.shape[0]
+        _kld = measure_KLD(yMu, Yb) * Yb.shape[0]
         nll += _nll
         acc += _acc
+        mse += _mse
+        bce += _bce
+        kld += _kld
 
         n_samp_seen += Yb.shape[0]
         if verbosity > 0:
-            print("\r Acc = {}  NLL = {}  ({} samps)".format(acc/n_samp_seen,
+            print("\r Acc = {}  NLL = {} MSE = {} BCE = {} KLD = {}  ({} samps)".format(acc/n_samp_seen,
                                                              nll/n_samp_seen,
+                                                             mse/n_samp_seen,
+                                                             bce/n_samp_seen,
+                                                             kld/n_samp_seen,
                                                              n_samp_seen), end="")
     if verbosity > 0:
         print()
     nll = nll/(Xdev.shape[0]) ## calc full dev-set nll
     acc = acc/(Xdev.shape[0]) ## calc full dev-set acc
+    mse = mse / (Xdev.shape[0]) 
+    bce = bce / (Xdev.shape[0])
+    kld = kld / (Xdev.shape[0])
     latents = jnp.concatenate(latents, axis=0)
-    return nll, acc, latents
+    return nll, acc, mse, bce, kld, latents
 
 
 # read in general program arguments
@@ -79,8 +94,8 @@ options, remainder = gopt.getopt(sys.argv[1:], '', ["dataX=", "dataY=",
                                                     "verbosity="])
 
 sample_idx = 0 ## choose a pattern (0 <= idx < _X.shape[0])
-dataX = "../../data/mnist/validX.npy"
-dataY= "../../data/mnist/validY.npy"
+dataX = "../../../data/mnist/validX.npy"
+dataY= "../../../data/mnist/validY.npy"
 verbosity = 0 ## verbosity level (0 - fairly minimal, 1 - prints multiple lines on I/O)
 for opt, arg in options:
     if opt in ("--dataX"):
@@ -104,9 +119,9 @@ model = Model(dkey=dkey, dt=dt, T=T, loadDir="exp/snn_bfa")
 #model = load_model("exp/snn_bfa", dt=dt, T=T) ## load in pre-trained SNN model
 
 ## evaluate performance
-nll, acc, latents = eval_model(model, _X, _Y, mb_size=1000)
+nll, acc, mse, bce, kld, latents = eval_model(model, _X, _Y, mb_size=1000)
 print("------------------------------------")
-print("=> NLL = {}  Acc = {}".format(nll, acc))
+print("=> NLL = {}  Acc = {} MSE = {} BCE = {} KLD = {}".format(nll, acc, mse, bce, kld))
 
 ## extract latents and visualize via the t-SNE algorithm
 print("latent.shape = ",latents.shape)
