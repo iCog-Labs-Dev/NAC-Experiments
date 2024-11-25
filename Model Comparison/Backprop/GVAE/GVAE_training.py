@@ -156,3 +156,27 @@ def evaluate(model, loader):
     print(f'MSE: {avg_loss:.4f}, BCE: {avg_bce:.4f}, NLL: {avg_nll:.4f}, Accuracy: {accuracy:.2f}%, KLD: {avg_kld:.4f}')
 
     return avg_loss, avg_bce, avg_nll, avg_kld, accuracy
+
+num_epochs = 50
+sim_start_time = time.time()  # Start time profiling
+
+print("--------------- Training ---------------")
+for epoch in range(1, num_epochs + 1): 
+    train_loss, train_bce, train_nll, train_accuracy = train(model, train_loader, optimizer, epoch)
+    print(f'Epoch [{epoch}/{num_epochs}]')
+    print(f'Train MSE: {train_loss:.4f}, Train BCE: {train_bce:.4f}, Train NLL: {train_nll:.4f}, Train Accuracy: {train_accuracy:.2f}%')
+
+# Stop time profiling
+sim_time = time.time() - sim_start_time
+print(f"Training Time = {sim_time:.4f} seconds")
+
+print("--------------- Evaluating ---------------")
+eval_loss, eval_bce, eval_nll, eval_kld, eval_accuracy = evaluate(model, dev_loader)
+print(f'Eval MSE: {eval_loss:.4f}, Eval BCE: {eval_bce:.4f}, Eval NLL: {eval_nll:.4f}, Eval KLD: {eval_kld:.4f}, Eval Accuracy: {eval_accuracy:.2f}%')
+
+print("--------------- Testing ---------------")
+inference_start_time = time.time()
+test_loss, test_bce, test_nll, test_kld, test_accuracy = evaluate(model, test_loader)
+inference_time = time.time() - inference_start_time
+print(f"Inference Time = {inference_time:.4f} seconds")
+print(f'Test MSE: {test_loss:.4f},Test BCE: {test_bce:.4f}, Test NLL: {test_nll:.4f}, Test KLD: {test_kld:.4f}, Test Accuracy: {test_accuracy:.2f}%')
