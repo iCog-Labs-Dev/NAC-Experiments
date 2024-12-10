@@ -4,15 +4,15 @@ from torch.utils.data import DataLoader, Dataset
 import torch.nn.functional as F
 import numpy as np
 from tqdm import tqdm
-from GVAE_model import VAE  
+from GVAE_model import VAE_GMM
 import sys, getopt as gopt, time
 from ngclearn.utils.metric_utils import measure_KLD
 import matplotlib.pyplot as plt
 
 class NumpyDataset(Dataset):
     def __init__(self, dataX, dataY=None):
-        self.dataX = np.load(dataX) 
-        self.dataY = np.load(dataY) if dataY is not None else None 
+        self.dataX = np.load(dataX)
+        self.dataY = np.load(dataY) if dataY is not None else None
 
     def __len__(self):
         return len(self.dataX)
@@ -21,7 +21,7 @@ class NumpyDataset(Dataset):
         data = torch.tensor(self.dataX[idx], dtype=torch.float32)
         label = torch.tensor(self.dataY[idx], dtype=torch.long) if self.dataY is not None else None
         return data, label
-    
+
 options, remainder = gopt.getopt(sys.argv[1:], '',
                                  ["dataX=", "dataY=", "devX=", "devY=", "testX", "testY","verbosity="]
                                  )
@@ -32,7 +32,7 @@ devX = "../../../data/mnist/validX.npy"
 devY = "../../../data/mnist/validY.npy"
 testX = "../../../data/mnist/testX.npy"
 testY = "../../../data/mnist/testY.npy"
-verbosity = 0  
+verbosity = 0
 
 for opt, arg in options:
     if opt in ("--dataX"):
@@ -54,8 +54,9 @@ print("Train-set: X: {} | Y: {}".format(dataX, dataY))
 print("  Dev-set: X: {} | Y: {}".format(devX, devY))
 print("  Test-set: X: {} | Y: {}".format(testX, testY))
 
-latent_dim = 64  
-model = VAE(latent_dim=latent_dim)
+latent_dim = 64
+n_components = 10
+model = VAE_GMM(latent_dim=latent_dim, n_components=n_components)
 optimizer = optim.Adam(model.parameters(), lr=0.001)
 
 train_dataset = NumpyDataset(dataX, dataY)
@@ -65,7 +66,7 @@ dev_dataset = NumpyDataset(devX, devY)
 dev_loader = DataLoader(dataset=dev_dataset, batch_size=200, shuffle=False)
 
 test_dataset = NumpyDataset(testX, testY)
-test_loader = DataLoader(dataset=test_dataset, batch_size = 200, shuffle = False)
+test_loader = DataLoader(dataset=test_dataset, batch_size=200, shuffle=False)
 
 def train(model, loader, optimizer, epoch):
     model.train()
@@ -76,21 +77,20 @@ def train(model, loader, optimizer, epoch):
     total_samples = 0
     threshold = 0.1
     for batch_idx, (data, _) in enumerate(tqdm(loader)):
-        data = data.view(data.size(0), -1)  # Flatten the input data to shape (batch_size, input_dim)
+        data = data.view(data.size(0), -1)
         optimizer.zero_grad()
 
         reconstructed, mu, logvar = model(data)
-        reconstructed = reconstructed.view(reconstructed.size(0), -1)  # Flatten the output to (batch_size, input_dim)
-        # Calculating accuracy
-        diff = torch.abs(reconstructed - data) 
-        correct = torch.sum(diff < threshold, dim=1)  
-        total_correct += correct.sum().item()  
+        reconstructed = reconstructed.view(reconstructed.size(0), -1)
+        
+        diff = torch.abs(reconstructed - data)
+        correct = torch.sum(diff < threshold, dim=1)
+        total_correct += correct.sum().item()
         total_samples += data.size(0)
 
-        # Loss for reconstruction
         loss = F.mse_loss(reconstructed, data)
         bce_loss = F.binary_cross_entropy(reconstructed, data)
-        log_probs = torch.log(reconstructed + 1e-9)  # Add small value for numerical stability
+        log_probs = torch.log(reconstructed + 1e-9)
         nll_loss = F.nll_loss(log_probs, data.argmax(dim=-1))
         loss.backward()
         optimizer.step()
@@ -99,7 +99,6 @@ def train(model, loader, optimizer, epoch):
         total_bce += bce_loss.item()
         total_nll += nll_loss.item()
         torch.save(model.state_dict(), "trained_model.pth")
-
 
     avg_loss = running_loss / len(loader)
     avg_bce = total_bce / len(loader)
@@ -115,37 +114,34 @@ def evaluate(model, loader):
     total_nll = 0.0
     total_correct = 0
     total_samples = 0
-    threshold = 0.1  
+    threshold = 0.1
     total_kld = 0.0
     with torch.no_grad():
         for batch_idx, (data, _) in enumerate(loader):
-            data = data.view(data.size(0), -1) 
+            data = data.view(data.size(0), -1)
             reconstructed, mu, logvar = model(data)
-            reconstructed = reconstructed.view(reconstructed.size(0), -1) 
+            reconstructed = reconstructed.view(reconstructed.size(0), -1)
 
-            loss = F.mse_loss(reconstructed, data)  
+            loss = F.mse_loss(reconstructed, data)
             eval_loss += loss.item()
             
             data_np = data.cpu().numpy()
             reconstructed_np = reconstructed.cpu().numpy()
             
-            # Calculating BCE
             bce_loss = F.binary_cross_entropy(reconstructed, data)
             total_bce += bce_loss.item()
 
-            # Calculating NLL
-            log_probs = torch.log(reconstructed + 1e-9)  # Add small value for numerical stability
+            log_probs = torch.log(reconstructed + 1e-9)
             nll_loss = F.nll_loss(log_probs, data.argmax(dim=-1))
             total_nll += nll_loss.item()
-            # Calculating KLD
+            
             kld = measure_KLD(data_np, reconstructed_np)
             total_kld = kld.item()
 
-            # Calculating accuracy
-            diff = torch.abs(reconstructed - data) 
-            correct = torch.sum(diff < threshold, dim=1)  
-            total_correct += correct.sum().item()  
-            total_samples += data.size(0) 
+            diff = torch.abs(reconstructed - data)
+            correct = torch.sum(diff < threshold, dim=1)
+            total_correct += correct.sum().item()
+            total_samples = data.size(0)
 
     avg_loss = eval_loss / len(loader)
     avg_bce = total_bce / len(loader)
@@ -158,15 +154,14 @@ def evaluate(model, loader):
     return avg_loss, avg_bce, avg_nll, avg_kld, accuracy
 
 num_epochs = 50
-sim_start_time = time.time()  # Start time profiling
+sim_start_time = time.time()
 
 print("--------------- Training ---------------")
-for epoch in range(1, num_epochs + 1): 
+for epoch in range(1, num_epochs + 1):
     train_loss, train_bce, train_nll, train_accuracy = train(model, train_loader, optimizer, epoch)
     print(f'Epoch [{epoch}/{num_epochs}]')
     print(f'Train MSE: {train_loss:.4f}, Train BCE: {train_bce:.4f}, Train NLL: {train_nll:.4f}, Train Accuracy: {train_accuracy:.2f}%')
 
-# Stop time profiling
 sim_time = time.time() - sim_start_time
 print(f"Training Time = {sim_time:.4f} seconds")
 
