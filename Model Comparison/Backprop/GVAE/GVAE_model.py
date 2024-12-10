@@ -2,14 +2,22 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-# Define the VAE model
-class VAE(nn.Module):
-    def __init__(self, latent_dim):
-        super(VAE, self).__init__()
+class VAE_GMM(nn.Module):
+    def __init__(self, latent_dim, n_components):
+        super(VAE_GMM, self).__init__()
+        self.latent_dim = latent_dim
+        self.n_components = n_components
+        
         # Encoder
         self.fc1 = nn.Linear(28 * 28, 400)
-        self.fc21 = nn.Linear(400, latent_dim)  # Mean of latent variables
-        self.fc22 = nn.Linear(400, latent_dim)  # Log-variance of latent variables
+        self.fc21 = nn.Linear(400, latent_dim)
+        self.fc22 = nn.Linear(400, latent_dim)
+        
+        # GMM parameters
+        self.pi = nn.Parameter(torch.ones(n_components) / n_components)
+        self.mu = nn.Parameter(torch.randn(n_components, latent_dim) * 0.01)
+        self.logvar = nn.Parameter(torch.randn(n_components, latent_dim) * 0.01)
+        
         # Decoder
         self.fc3 = nn.Linear(latent_dim, 400)
         self.fc4 = nn.Linear(400, 28 * 28)
@@ -21,7 +29,17 @@ class VAE(nn.Module):
     def reparameterize(self, mu, logvar):
         std = torch.exp(0.5 * logvar)
         eps = torch.randn_like(std)
-        return mu + eps * std
+        z = mu + eps * std
+        
+        # GMM sampling
+        gmm_idx = torch.multinomial(self.pi, z.size(0), replacement=True)
+        gmm_mu = self.mu[gmm_idx]
+        gmm_logvar = self.logvar[gmm_idx]
+        gmm_std = torch.exp(0.5 * gmm_logvar)
+        gmm_eps = torch.randn_like(gmm_std)
+        z_gmm = gmm_mu + gmm_eps * gmm_std
+        
+        return z_gmm
 
     def decode(self, z):
         h3 = F.relu(self.fc3(z))
