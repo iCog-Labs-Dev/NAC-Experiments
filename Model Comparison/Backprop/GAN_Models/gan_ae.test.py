@@ -15,6 +15,7 @@ from mnist_data import get_mnist_loaders
 from sklearn.manifold import TSNE 
 from torch.utils.data import DataLoader, Dataset
 from tqdm import tqdm
+from sklearn.mixture import GaussianMixture
 
 
 os.makedirs("images", exist_ok=True)
@@ -44,6 +45,28 @@ torch.manual_seed(42)
 if cuda:
     torch.cuda.manual_seed(42)
 
+def project_gradients_to_gaussian_ball(model, radius=5.0):
+    for param in model.parameters():
+        if param.grad is not None:
+            norm = param.grad.norm(p=2)
+            if norm > radius:
+                param.grad.mul_(radius / norm)
+
+def fit_gmm_to_latent_space(encoder, dataloader):
+    encoder.eval()
+    latents = []
+    with torch.no_grad():
+        for imgs, _ in dataloader:
+            imgs = imgs.type(Tensor)
+            _, mu, _ = encoder(imgs)  # mu is the latent code
+            latents.append(mu.cpu().numpy())
+    latents = np.concatenate(latents, axis=0)
+    
+    # Fit the Gaussian Mixture Model
+    gmm = GaussianMixture(n_components=75, random_state=42)
+    gmm.fit(latents)
+
+    return gmm
 
 
 class NumpyDataset(Dataset):
@@ -240,6 +263,12 @@ for epoch in range(opt.n_epochs):
         g_loss = 0.001 * g_loss_adv + 0.999 * reconstruction_loss + 0.1 * kld_loss
 
         g_loss.backward()
+
+        # Apply gradient rescaling to the generator's gradients
+        project_gradients_to_gaussian_ball(encoder, radius=5.0)
+        project_gradients_to_gaussian_ball(decoder, radius=5.0)
+
+
         optimizer_G.step()
 
         # ---------------------
@@ -262,6 +291,11 @@ for epoch in range(opt.n_epochs):
         d_loss = 0.5 * (real_loss + fake_loss)
 
         d_loss.backward()
+
+        # Apply gradient rescaling to the generator's gradients
+        project_gradients_to_gaussian_ball(encoder, radius=5.0)
+        project_gradients_to_gaussian_ball(decoder, radius=5.0)
+
         optimizer_D.step()
 
         # Calculate discriminator accuracy
@@ -312,8 +346,11 @@ for epoch in range(opt.n_epochs):
             visualize_reconstructions(epoch, batches_done, real_imgs, decoded_imgs)
 
     print(f"[Epoch {epoch + 1}/{opt.n_epochs}] Training completed.")
-
 print("Training completed.")
+
+gmm = fit_gmm_to_latent_space(encoder, train_loader)
+
+
 
 # Save the models
 torch.save(encoder.state_dict(), "models/encoder.pth")
@@ -353,8 +390,6 @@ def plot_losses(g_losses, d_losses, recon_losses, adv_losses, mse_losses, kld_lo
     plt.savefig("images/mse_kld.png")
     # plt.show()
 
-plot_losses(g_losses, d_losses, recon_losses, adv_losses, mse_losses, kld_losses, nll_losses)
-
 # Visualize the latent space
 def visualize_latent_space(encoder, dataloader):
     encoder.eval()
@@ -383,4 +418,97 @@ def visualize_latent_space(encoder, dataloader):
     plt.savefig("images/latent_space.png")
     # plt.show()
 
-visualize_latent_space(encoder, test_loader)
+
+# ----------
+#  Evaluation
+# ----------
+
+def evaluate_model(encoder, decoder, discriminator, test_loader, adversarial_loss, nll_loss, cuda):
+    encoder.eval()
+    decoder.eval()
+    discriminator.eval()
+
+    total_d_loss = 0
+    total_g_loss = 0
+    total_reconstruction_loss = 0
+    total_adv_loss = 0
+    total_kld_loss = 0
+    total_mse_loss = 0
+    total_accuracy = 0
+    total_samples = 0
+
+    with torch.no_grad():
+        for imgs, _ in tqdm(test_loader, desc="Evaluating on Test Data"):
+            # Prepare the inputs
+            real_imgs = imgs.type(torch.FloatTensor).cuda() if cuda else imgs.type(torch.FloatTensor)
+
+            # Forward pass through the encoder and decoder
+            encoded_imgs, mu, logvar = encoder(real_imgs)
+            decoded_imgs = decoder(encoded_imgs)
+
+            # Adversarial loss
+            valid = torch.ones(real_imgs.size(0), 1).cuda() if cuda else torch.ones(real_imgs.size(0), 1)
+            fake = torch.zeros(real_imgs.size(0), 1).cuda() if cuda else torch.zeros(real_imgs.size(0), 1)
+            g_loss_adv = adversarial_loss(discriminator(encoded_imgs), valid)
+
+            # Reconstruction loss using NLL (BCE with logits)
+            reconstruction_loss = nll_loss(decoded_imgs, real_imgs)
+
+            # KL Divergence
+            kld_loss = -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp())
+            kld_loss /= real_imgs.size(0) * np.prod(img_shape)  # Normalize
+
+            # MSE
+            mse = F.mse_loss(torch.sigmoid(decoded_imgs), real_imgs)
+
+            # Calculate the discriminator's performance
+            z = torch.randn(real_imgs.size(0), opt.latent_dim).cuda() if cuda else torch.randn(real_imgs.size(0), opt.latent_dim)
+            z_real = z + 0.1 * torch.randn_like(z)
+            z_fake = encoded_imgs.detach() + 0.1 * torch.randn_like(encoded_imgs.detach())
+
+            real_loss = adversarial_loss(discriminator(z_real), valid)
+            fake_loss = adversarial_loss(discriminator(z_fake), fake)
+            d_loss = 0.5 * (real_loss + fake_loss)
+
+            # Calculate accuracy
+            with torch.no_grad():
+                pred_real = discriminator(z_real)
+                pred_fake = discriminator(z_fake)
+
+                acc_real = (pred_real >= 0.5).float()
+                acc_fake = (pred_fake < 0.5).float()
+                accuracy = torch.mean(torch.cat((acc_real, acc_fake), 0))
+
+            # Accumulate loss and accuracy values
+            total_d_loss += d_loss.item()
+            total_g_loss += g_loss_adv.item()
+            total_reconstruction_loss += reconstruction_loss.item()
+            total_adv_loss += g_loss_adv.item()
+            total_kld_loss += kld_loss.item()
+            total_mse_loss += mse.item()
+            total_accuracy += accuracy.item()
+            total_samples += 1
+
+    # Calculate average loss values
+    avg_d_loss = total_d_loss / total_samples
+    avg_g_loss = total_g_loss / total_samples
+    avg_reconstruction_loss = total_reconstruction_loss / total_samples
+    avg_adv_loss = total_adv_loss / total_samples
+    avg_kld_loss = total_kld_loss / total_samples
+    avg_mse_loss = total_mse_loss / total_samples
+    avg_accuracy = total_accuracy / total_samples * 100
+
+    print(f"Evaluation Results: \n"
+          f"Discriminator Loss: {avg_d_loss:.4f} \n"
+          f"Generator Loss: {avg_g_loss:.4f} \n"
+          f"Reconstruction Loss: {avg_reconstruction_loss:.4f} \n"
+          f"Adversarial Loss: {avg_adv_loss:.4f} \n"
+          f"KL Divergence Loss: {avg_kld_loss:.4f} \n"
+          f"MSE Loss: {avg_mse_loss:.4f} \n"
+          f"Discriminator Accuracy: {avg_accuracy:.2f}%")
+    
+    return avg_d_loss, avg_g_loss, avg_reconstruction_loss, avg_adv_loss, avg_kld_loss, avg_mse_loss, avg_accuracy
+
+
+# Call evaluation function
+evaluate_model(encoder, decoder, discriminator, test_loader, adversarial_loss, nll_loss, cuda)
