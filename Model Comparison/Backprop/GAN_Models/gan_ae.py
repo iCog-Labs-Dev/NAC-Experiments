@@ -1,6 +1,7 @@
 import argparse
 import os
 import numpy as np
+# import jax.numpy as jnp
 import itertools
 import torchvision.transforms as transforms
 from torchvision.utils import save_image
@@ -12,6 +13,9 @@ import random
 import matplotlib.pyplot as plt 
 from mnist_data import get_mnist_loaders
 from sklearn.manifold import TSNE 
+from torch.utils.data import DataLoader, Dataset
+from tqdm import tqdm
+
 
 os.makedirs("images", exist_ok=True)
 os.makedirs("models", exist_ok=True)
@@ -24,14 +28,14 @@ parser.add_argument("--b1", type=float, default=0.5, help="adam: decay of first-
 parser.add_argument("--b2", type=float, default=0.999, help="adam: decay of second-order momentum of gradient")
 parser.add_argument("--n_cpu", type=int, default=8, help="number of CPU threads for data loading")
 parser.add_argument("--latent_dim", type=int, default=10, help="dimensionality of the latent code")
-parser.add_argument("--img_size", type=int, default=32, help="size of each image dimension")
+parser.add_argument("--img_size", type=int, default=28, help="size of each image dimension")
 parser.add_argument("--channels", type=int, default=1, help="number of image channels")
 parser.add_argument("--sample_interval", type=int, default=2000, help="interval between image sampling")
 opt = parser.parse_args()
 print(opt)
 
 img_shape = (opt.channels, opt.img_size, opt.img_size)
-
+print("this is the imaage shape " ,img_shape)
 cuda = True if torch.cuda.is_available() else False
 
 random.seed(42)
@@ -39,6 +43,23 @@ np.random.seed(42)
 torch.manual_seed(42)
 if cuda:
     torch.cuda.manual_seed(42)
+
+
+
+class NumpyDataset(Dataset):
+    def __init__(self, dataX, dataY=None):
+        self.dataX = np.load(dataX).reshape(-1,1,28,28)
+        self.dataY = np.load(dataY) if dataY is not None else None 
+
+    def __len__(self):
+        return len(self.dataX)
+
+    def __getitem__(self, idx):
+        data = torch.tensor(self.dataX[idx], dtype=torch.float32)
+        label = torch.tensor(self.dataY[idx], dtype=torch.long) if self.dataY is not None else None
+        return data, label
+    
+
 
 class Encoder(nn.Module):
     def __init__(self):
@@ -119,15 +140,35 @@ transform = transforms.Compose([
     transforms.Resize(opt.img_size),
     transforms.ToTensor(),
 ])
+dataX = "../../../data/mnist/trainX.npy"
+dataY = "../../../data/mnist/trainY.npy"
+devX = "../../../data/mnist/validX.npy"
+devY = "../../../data/mnist/validY.npy"
+testX = "../../../data/mnist/testX.npy"
+testY = "../../../data/mnist/testY.npy"
+verbosity = 0  
+train_dataset = NumpyDataset(dataX, dataY)
+train_loader = DataLoader(dataset=train_dataset, batch_size=200, shuffle=True)
+dev_dataset = NumpyDataset(devX, devY)
+dev_loader = DataLoader(dataset=dev_dataset, batch_size=200, shuffle=False)
 
-train_loader, test_loader = get_mnist_loaders(
-    batch_size=opt.batch_size,
-    image_size=opt.img_size,
-    num_workers=opt.n_cpu,
-    pin_memory=True,
-    download=True,
-    transform=transform
-)
+test_dataset = NumpyDataset(testX, testY)
+test_loader = DataLoader(dataset=test_dataset, batch_size = 200, shuffle = False)
+
+
+import torch
+
+# print(f"Train Dataset Information:\n"
+#       f"- Type: {type(train_loader.dataset)}\n"
+#       f"- Length: {len(train_loader.dataset)}\n"
+#       f"- Size (in bytes): {train_loader.dataset.__sizeof__()}\n"
+#       f"- Dataset Object: {train_loader.dataset}\n"
+#       f"- Data Shape: {train_loader.dataset.data.shape}\n"
+#       f"- Data Type: {train_loader.dataset.data.dtype}\n"
+#       f"- Target Shape: {train_loader.dataset.targets.shape}\n"
+#       f"- Target Type: {train_loader.dataset.targets.dtype}\n"
+#       f"- Example Data:\n{train_loader.dataset.data[0]}\n"
+#       f"- Example Target: {train_loader.dataset.targets[0]}")
 
 optimizer_D = torch.optim.Adam(discriminator.parameters(), lr=opt.lr * 0.5, betas=(opt.b1, opt.b2))
 
