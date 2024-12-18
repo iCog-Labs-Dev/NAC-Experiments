@@ -8,7 +8,6 @@ class Encoder(nn.Module):
             nn.Linear(28 * 28, 512),
             nn.ReLU(True),
             nn.Linear(512, 256),
-            nn.ReLU(True),
             nn.Linear(256, latent_dim)
         )
 
