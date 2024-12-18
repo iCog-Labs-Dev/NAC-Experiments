@@ -54,10 +54,11 @@ class RegularizedAutoencoder(nn.Module):
         self.encoder = Encoder(latent_dim) 
         self.decoder = Decoder(latent_dim)
         self.reconstruction_loss = nn.BCELoss() 
+        self.l2_lambda = l2_lambda
         self.optimizer = torch.optim.Adam(
             list(self.encoder.parameters()) + list(self.decoder.parameters()), 
             lr=learning_rate, 
-            weight_decay=l2_lambda
+            weight_decay = self.l2_lambda
         )
     def forward(self, x):
         z = self.encoder(x)
