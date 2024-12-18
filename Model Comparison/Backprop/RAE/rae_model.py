@@ -7,7 +7,9 @@ class Encoder(nn.Module):
         self.model = nn.Sequential(
             nn.Linear(28 * 28, 512),
             nn.ReLU(True),
-            nn.Linear(512, latent_dim)
+            nn.Linear(512, 256),
+            nn.ReLU(True),
+            nn.Linear(256, latent_dim)
         )
 
     def forward(self, x):
@@ -19,10 +21,11 @@ class Decoder(nn.Module):
     def __init__(self, latent_dim):
         super(Decoder, self).__init__()
         self.model = nn.Sequential(
-            nn.Linear(latent_dim, 512),
+            nn.Linear(latent_dim, 256),
             nn.ReLU(True),
+            nn.Linear(256, 512),
             nn.Linear(512, 28 * 28),
-            nn.Softmax(dim=-1) 
+            nn.Sigmoid()
         )
 
     def forward(self, z):
