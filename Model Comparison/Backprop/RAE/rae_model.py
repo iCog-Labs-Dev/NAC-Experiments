@@ -53,9 +53,7 @@ class RegularizedAutoencoder(nn.Module):
         super(RegularizedAutoencoder, self).__init__() 
         self.encoder = Encoder(latent_dim) 
         self.decoder = Decoder(latent_dim)
-        self.reconstruction_loss = nn.MSELoss()
         self.reconstruction_loss = nn.BCELoss() 
-        self.nll_loss = nn.NLLLoss()
         self.optimizer = torch.optim.Adam(
             list(self.encoder.parameters()) + list(self.decoder.parameters()), 
             lr=learning_rate, 
