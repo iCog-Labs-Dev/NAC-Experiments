@@ -10,6 +10,14 @@ class Encoder(nn.Module):
             nn.Linear(512, 256),
             nn.Linear(256, latent_dim)
         )
+        self._initialize_weights()
+
+    def _initialize_weights(self):
+        for m in self.model:
+            if isinstance(m, nn.Linear):
+                nn.init.normal_(m.weight, mean=0.0, std=0.02)
+                if m.bias is not None:
+                    nn.init.zeros_(m.bias)
 
     def forward(self, x):
         x = x.view(-1, 28 * 28)  # Flatten image
@@ -26,6 +34,14 @@ class Decoder(nn.Module):
             nn.Linear(512, 28 * 28),
             nn.Sigmoid()
         )
+        self._initialize_weights()
+
+    def _initialize_weights(self):
+        for m in self.model:
+            if isinstance(m, nn.Linear):
+                nn.init.normal_(m.weight, mean=0.0, std=0.02)
+                if m.bias is not None:
+                    nn.init.zeros_(m.bias)
 
     def forward(self, z):
         x_recon = self.model(z)
