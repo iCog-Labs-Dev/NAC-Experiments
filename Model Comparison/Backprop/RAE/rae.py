@@ -4,6 +4,7 @@ from torch.utils.data import DataLoader, Dataset
 import torch.nn.functional as F
 import numpy as np
 from tqdm import tqdm
+from sklearn.mixture import GaussianMixture
 from rae_model import RegularizedAutoencoder  
 import sys, getopt as gopt, time
 from ngclearn.utils.metric_utils import measure_KLD
@@ -103,7 +104,6 @@ def train(model, loader, optimizer, epoch):
         torch.save(model.state_dict(), "trained_model.pth")
 
     avg_bce = total_bce / len(loader)
-    print(f'Epoch [{epoch}], BCE: {avg_bce:.4f}')
     return avg_bce
 
 def evaluate(model, loader):
@@ -122,10 +122,24 @@ def evaluate(model, loader):
             total_bce += bce_loss.item()
 
     avg_bce = total_bce / len(loader)
-    print(f'BCE: {avg_bce:.4f}')
     return avg_bce
 
-num_epochs = 10  
+def fit_gmm_on_latent(model, loader, n_components=75):
+    model.eval()
+    latents = []
+    with torch.no_grad():
+        for data, _ in loader:
+            data = data.view(data.size(0), -1)
+            z = model.encoder(data)
+            latents.append(z.cpu().numpy())
+    latents = np.vstack(latents)
+
+    gmm = GaussianMixture(n_components=n_components, covariance_type='full')
+    gmm.fit(latents)
+    print("GMM fitted on latent representations.")
+    return gmm
+
+num_epochs = 5 
 
 # Start time profiling
 sim_start_time = time.time()
@@ -138,6 +152,10 @@ for epoch in range(1, num_epochs + 1):
 # Stop time profiling
 sim_time = time.time() - sim_start_time
 print(f"Training Time = {sim_time:.4f} seconds")
+
+print("--------------- Fitting GMM on latent space ---------------")
+gmm_train = fit_gmm_on_latent(model, train_loader, n_components=75)
+print("GMM fitting completed.")
 
 print("--------------- Evaluating ---------------")
 eval_bce = evaluate(model, dev_loader)
