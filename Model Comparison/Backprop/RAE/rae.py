@@ -55,7 +55,7 @@ print("  Test-set: X: {} | Y: {}".format(testX, testY))
 
 latent_dim = 64  
 model = RegularizedAutoencoder(latent_dim=latent_dim)
-optimizer = optim.Adam(model.parameters(), lr=0.001)
+optimizer = optim.SGD(model.parameters(), lr=0.001)
 
 train_dataset = NumpyDataset(dataX, dataY)
 train_loader = DataLoader(dataset=train_dataset, batch_size=200, shuffle=True)
@@ -65,6 +65,20 @@ dev_loader = DataLoader(dataset=dev_dataset, batch_size=200, shuffle=False)
 
 test_dataset = NumpyDataset(testX, testY)
 test_loader = DataLoader(dataset=test_dataset, batch_size = 200, shuffle = False)
+
+# Function to rescale gradients
+def rescale_gradients(model, radius=5):
+    total_norm = 0.0
+    for p in model.parameters():
+        if p.grad is not None:
+            param_norm = p.grad.data.norm(2)
+            total_norm += param_norm.item() ** 2
+    total_norm = total_norm ** 0.5
+
+    scale = radius / max(radius, total_norm)
+    for p in model.parameters():
+        if p.grad is not None:
+            p.grad.data.mul_(scale)
 
 def train(model, loader, optimizer, epoch):
     model.train()
@@ -92,6 +106,7 @@ def train(model, loader, optimizer, epoch):
         log_probs = torch.log(reconstructed + 1e-9)  # Add small value for numerical stability
         nll_loss = F.nll_loss(log_probs, data.argmax(dim=-1))
         loss.backward()
+        rescale_gradients(model, radius=5)
         optimizer.step()
 
         running_loss += loss.item()
