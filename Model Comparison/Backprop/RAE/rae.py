@@ -139,7 +139,33 @@ def fit_gmm_on_latent(model, loader, n_components=75):
     print("GMM fitted on latent representations.")
     return gmm
 
-num_epochs = 5 
+def masked_mse(model, loader):
+    model.eval()
+    total_mse = 0.0
+    total_samples = 0
+    with torch.no_grad():
+        for data, _ in loader:
+            data = data / 255.0  # Normalize input
+            data = data.view(data.size(0), -1)
+
+            # Mask exactly half of the image columns
+            mask = torch.ones_like(data, dtype=torch.bool)  # Ensure mask is Boolean
+            mask[:, : data.size(1) // 2] = 0  # Mask left half of the image
+
+            masked_data = data * mask.float()  # Apply mask
+
+            reconstructed = model(masked_data).view(data.size(0), -1)
+
+            # Compute MSE over the masked (hidden) parts
+            mse = F.mse_loss(reconstructed[~mask], data[~mask], reduction="sum")
+            total_mse += mse.item()
+            total_samples += data.size(0)
+
+    # Normalize by the total number of masked elements
+    avg_mse = total_mse / (total_samples * data.size(1) // 2)
+    return avg_mse
+
+num_epochs = 50 
 
 # Start time profiling
 sim_start_time = time.time()
@@ -167,3 +193,7 @@ test_bce = evaluate(model, test_loader)
 inference_time = time.time() - inference_start_time
 print(f'Test BCE: {test_bce:.4f}')
 print(f"Inference Time = {inference_time:.4f} seconds")
+
+print("--------------- Masked MSE ---------------")
+masked_mse_result = masked_mse(model, test_loader)
+print(f"Masked MSE: {masked_mse_result:.4f}")
