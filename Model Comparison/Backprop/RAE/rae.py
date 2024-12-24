@@ -15,7 +15,7 @@ class NumpyDataset(Dataset):
     def __init__(self, dataX, dataY=None):
         self.dataX = np.load(dataX)
         if dataY is not None:
-            self.dataY = np.load(dataY).reshape(-1)  # Ensure labels are 1D
+            self.dataY = np.load(dataY).reshape(-1)
         else:
             self.dataY = None
 
@@ -93,22 +93,21 @@ def train(model, loader, optimizer, epoch):
 
     for batch_idx, (data, _) in enumerate(tqdm(loader)):
         data = data / 255.0
-        data = data.view(data.size(0), -1)  # Flatten the input data to shape (batch_size, input_dim)
+        data = data.view(data.size(0), -1)  
         optimizer.zero_grad()
 
         reconstructed = model(data)
-        reconstructed = reconstructed.view(reconstructed.size(0), -1)  # Flatten the output to (batch_size, input_dim)
+        reconstructed = reconstructed.view(reconstructed.size(0), -1) 
     
-
         # Loss for reconstruction
-        bce_loss = F.binary_cross_entropy(reconstructed, data, reduction='sum')
+        bce_loss = F.binary_cross_entropy(reconstructed, data)
         bce_loss.backward()
         rescale_gradients(model, radius=5)
         optimizer.step()
 
         total_bce += bce_loss.item()
-        
-    avg_bce = total_bce / len(loader)
+
+    avg_bce = total_bce / len(loader.dataset)
     return avg_bce
 
 def evaluate(model, loader):
@@ -123,10 +122,10 @@ def evaluate(model, loader):
             reconstructed = reconstructed.view(reconstructed.size(0), -1) 
             
             # Calculating BCE
-            bce_loss = F.binary_cross_entropy(reconstructed, data, reduction='sum')
+            bce_loss = F.binary_cross_entropy(reconstructed, data)
             total_bce += bce_loss.item()
 
-    avg_bce = total_bce / len(loader)
+    avg_bce = total_bce / len(loader.dataset)
     return avg_bce
 
 def fit_gmm_on_latent(model, loader, n_components=75):
@@ -150,23 +149,20 @@ def masked_mse(model, loader):
     total_samples = 0
     with torch.no_grad():
         for data, _ in loader:
-            data = data / 255.0  # Normalize input
+            data = data / 255.0 
             data = data.view(data.size(0), -1)
 
-            # Mask exactly half of the image columns
-            mask = torch.ones_like(data, dtype=torch.bool)  # Ensure mask is Boolean
-            mask[:, : data.size(1) // 2] = 0  # Mask left half of the image
+            mask = torch.ones_like(data, dtype=torch.bool) 
+            mask[:, : data.size(1) // 2] = 0  
 
-            masked_data = data * mask.float()  # Apply mask
+            masked_data = data * mask.float()  
 
             reconstructed = model(masked_data).view(data.size(0), -1)
 
-            # Compute MSE over the masked (hidden) parts
             mse = F.mse_loss(reconstructed[~mask], data[~mask], reduction="sum")
             total_mse += mse.item()
             total_samples += data.size(0)
 
-    # Normalize by the total number of masked elements
     avg_mse = total_mse / (total_samples * data.size(1) // 2)
     return avg_mse
 
@@ -175,7 +171,6 @@ def evaluate_classification(model, train_loader, test_loader):
     train_latents, train_labels = [], []
     test_latents, test_labels = [], []
 
-    # Collect latents and labels for training data
     with torch.no_grad():
         for data, label in train_loader:
             data = data.view(data.size(0), -1)
@@ -184,7 +179,6 @@ def evaluate_classification(model, train_loader, test_loader):
                 train_latents.append(z.cpu().numpy())
                 train_labels.append(label.cpu().numpy())
     
-    # Collect latents and labels for test data
     with torch.no_grad():
         for data, label in test_loader:
             data = data.view(data.size(0), -1)
@@ -193,17 +187,14 @@ def evaluate_classification(model, train_loader, test_loader):
                 test_latents.append(z.cpu().numpy())
                 test_labels.append(label.cpu().numpy())
 
-    # Convert collected latents and labels to numpy arrays
     train_latents = np.vstack(train_latents)
     train_labels = np.hstack(train_labels).reshape(-1)
     test_latents = np.vstack(test_latents)
     test_labels = np.hstack(test_labels).reshape(-1)
 
-    # Train logistic regression on latent representations from training data
     clf = LogisticRegression(max_iter=1000)
     clf.fit(train_latents, train_labels)
 
-    # Evaluate classifier on test data
     predictions = clf.predict(test_latents)
     err = 100 * (1 - accuracy_score(test_labels, predictions))
     return err

@@ -59,7 +59,6 @@ class RegularizedAutoencoder(nn.Module):
         super(RegularizedAutoencoder, self).__init__() 
         self.encoder = Encoder(latent_dim) 
         self.decoder = Decoder(latent_dim)
-        self.reconstruction_loss = nn.BCELoss() 
         self.l2_lambda = l2_lambda
         self.optimizer = torch.optim.SGD(
             list(self.encoder.parameters()) + list(self.decoder.parameters()), 
@@ -70,6 +69,3 @@ class RegularizedAutoencoder(nn.Module):
         z = self.encoder(x)
         recon_x = self.decoder(z)
         return recon_x
-
-    def compute_loss(self, recon_x, x):
-        return self.reconstruction_loss(recon_x, x)
