@@ -101,14 +101,13 @@ def train(model, loader, optimizer, epoch):
     
 
         # Loss for reconstruction
-        bce_loss = F.binary_cross_entropy(reconstructed, data)
+        bce_loss = F.binary_cross_entropy(reconstructed, data, reduction='sum')
         bce_loss.backward()
         rescale_gradients(model, radius=5)
         optimizer.step()
 
         total_bce += bce_loss.item()
-        torch.save(model.state_dict(), "trained_model.pth")
-
+        
     avg_bce = total_bce / len(loader)
     return avg_bce
 
@@ -124,7 +123,7 @@ def evaluate(model, loader):
             reconstructed = reconstructed.view(reconstructed.size(0), -1) 
             
             # Calculating BCE
-            bce_loss = F.binary_cross_entropy(reconstructed, data)
+            bce_loss = F.binary_cross_entropy(reconstructed, data, reduction='sum')
             total_bce += bce_loss.item()
 
     avg_bce = total_bce / len(loader)
