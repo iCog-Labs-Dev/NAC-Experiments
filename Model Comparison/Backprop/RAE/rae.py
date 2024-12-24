@@ -4,14 +4,20 @@ from torch.utils.data import DataLoader, Dataset
 import torch.nn.functional as F
 import numpy as np
 from tqdm import tqdm
+from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import accuracy_score
+from sklearn.model_selection import train_test_split
 from sklearn.mixture import GaussianMixture
 from rae_model import RegularizedAutoencoder  
 import sys, getopt as gopt, time
 from ngclearn.utils.metric_utils import measure_KLD
 class NumpyDataset(Dataset):
     def __init__(self, dataX, dataY=None):
-        self.dataX = np.load(dataX) 
-        self.dataY = np.load(dataY) if dataY is not None else None 
+        self.dataX = np.load(dataX)
+        if dataY is not None:
+            self.dataY = np.load(dataY).reshape(-1)  # Ensure labels are 1D
+        else:
+            self.dataY = None
 
     def __len__(self):
         return len(self.dataX)
@@ -165,6 +171,44 @@ def masked_mse(model, loader):
     avg_mse = total_mse / (total_samples * data.size(1) // 2)
     return avg_mse
 
+def evaluate_classification(model, train_loader, test_loader):
+    model.eval()
+    train_latents, train_labels = [], []
+    test_latents, test_labels = [], []
+
+    # Collect latents and labels for training data
+    with torch.no_grad():
+        for data, label in train_loader:
+            data = data.view(data.size(0), -1)
+            if label is not None:
+                z = model.encoder(data)
+                train_latents.append(z.cpu().numpy())
+                train_labels.append(label.cpu().numpy())
+    
+    # Collect latents and labels for test data
+    with torch.no_grad():
+        for data, label in test_loader:
+            data = data.view(data.size(0), -1)
+            if label is not None:
+                z = model.encoder(data)
+                test_latents.append(z.cpu().numpy())
+                test_labels.append(label.cpu().numpy())
+
+    # Convert collected latents and labels to numpy arrays
+    train_latents = np.vstack(train_latents)
+    train_labels = np.hstack(train_labels).reshape(-1)
+    test_latents = np.vstack(test_latents)
+    test_labels = np.hstack(test_labels).reshape(-1)
+
+    # Train logistic regression on latent representations from training data
+    clf = LogisticRegression(max_iter=1000)
+    clf.fit(train_latents, train_labels)
+
+    # Evaluate classifier on test data
+    predictions = clf.predict(test_latents)
+    err = 100 * (1 - accuracy_score(test_labels, predictions))
+    return err
+
 num_epochs = 50 
 
 # Start time profiling
@@ -197,3 +241,6 @@ print(f"Inference Time = {inference_time:.4f} seconds")
 print("--------------- Masked MSE ---------------")
 masked_mse_result = masked_mse(model, test_loader)
 print(f"Masked MSE: {masked_mse_result:.4f}")
+
+err = evaluate_classification(model, train_loader, test_loader)
+print(f"Classifation Error: {err:.2f}")
