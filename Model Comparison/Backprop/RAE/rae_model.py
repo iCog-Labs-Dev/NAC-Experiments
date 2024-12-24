@@ -8,7 +8,10 @@ class Encoder(nn.Module):
             nn.Linear(28 * 28, 512),
             nn.ReLU(True),
             nn.Linear(512, 256),
-            nn.Linear(256, latent_dim)
+            nn.ReLU(True),
+            nn.Linear(256, 128),
+            nn.ReLU(True),
+            nn.Linear(128, latent_dim)
         )
         self._initialize_weights()
 
@@ -28,9 +31,12 @@ class Decoder(nn.Module):
     def __init__(self, latent_dim):
         super(Decoder, self).__init__()
         self.model = nn.Sequential(
-            nn.Linear(latent_dim, 256),
+            nn.Linear(latent_dim, 128),
+            nn.ReLU(True),
+            nn.Linear(128, 256),
             nn.ReLU(True),
             nn.Linear(256, 512),
+            nn.ReLU(True),
             nn.Linear(512, 28 * 28),
             nn.Sigmoid()
         )
