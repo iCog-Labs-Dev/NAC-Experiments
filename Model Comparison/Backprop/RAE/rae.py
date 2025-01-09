@@ -67,20 +67,6 @@ dev_loader = DataLoader(dataset=dev_dataset, batch_size=200, shuffle=False)
 test_dataset = NumpyDataset(testX, testY)
 test_loader = DataLoader(dataset=test_dataset, batch_size = 200, shuffle = False)
 
-# Function to rescale gradients
-def rescale_gradients(model, radius=5):
-    total_norm = 0.0
-    for p in model.parameters():
-        if p.grad is not None:
-            param_norm = p.grad.data.norm(2)
-            total_norm += param_norm.item() ** 2
-    total_norm = total_norm ** 0.5
-
-    scale = radius / max(radius, total_norm)
-    for p in model.parameters():
-        if p.grad is not None:
-            p.grad.data.mul_(scale)
-
 def train(model, loader, optimizer, epoch):
     model.train()
     bce_losses = []
