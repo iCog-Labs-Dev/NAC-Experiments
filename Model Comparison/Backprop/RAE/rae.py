@@ -6,11 +6,9 @@ import numpy as np
 from tqdm import tqdm
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import accuracy_score
-from sklearn.model_selection import train_test_split
 from sklearn.mixture import GaussianMixture
 from rae_model import RegularizedAutoencoder  
 import sys, getopt as gopt, time
-from ngclearn.utils.metric_utils import measure_KLD
 class NumpyDataset(Dataset):
     def __init__(self, dataX, dataY=None):
         self.dataX = np.load(dataX)
@@ -59,10 +57,6 @@ for opt, arg in options:
 print("Train-set: X: {} | Y: {}".format(dataX, dataY))
 print("  Dev-set: X: {} | Y: {}".format(devX, devY))
 print("  Test-set: X: {} | Y: {}".format(testX, testY))
-
-latent_dim = 64  
-model = RegularizedAutoencoder(latent_dim=latent_dim)
-optimizer = optim.SGD(model.parameters(), lr=0.001)
 
 train_dataset = NumpyDataset(dataX, dataY)
 train_loader = DataLoader(dataset=train_dataset, batch_size=200, shuffle=True)
@@ -199,6 +193,11 @@ def evaluate_classification(model, train_loader, test_loader):
     err = 100 * (1 - accuracy_score(test_labels, predictions))
     return err
 
+input_dim = 28 * 28
+hidden_dims = [360, 360]
+latent_dim = 20
+model = RegularizedAutoencoder(latent_dim=latent_dim, input_dim=input_dim, hidden_dims=hidden_dims)
+optimizer = optim.SGD(model.parameters(), lr=0.1)
 num_epochs = 50 
 
 # Start time profiling
