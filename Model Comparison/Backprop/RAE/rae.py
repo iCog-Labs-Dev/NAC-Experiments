@@ -93,21 +93,21 @@ def train(model, loader, optimizer, epoch):
 
 def evaluate(model, loader):
     model.eval()
-    total_bce = 0.0
+    bce_losses = []
     
     with torch.no_grad():
         for data, _ in loader:
-            data = data / 255.0
+            data = (data > 0.5).float()
             data = data.view(data.size(0), -1) 
             reconstructed = model(data)
             reconstructed = reconstructed.view(reconstructed.size(0), -1) 
             
-            # Calculating BCE
-            bce_loss = F.binary_cross_entropy(reconstructed, data)
-            total_bce += bce_loss.item()
+            bce_loss = F.binary_cross_entropy(reconstructed, data, reduction="sum")
+            bce_losses.append(bce_loss.item() / data.size(0))
 
-    avg_bce = total_bce / len(loader.dataset)
-    return avg_bce
+    avg_bce = np.mean(bce_losses)
+    std_bce = np.std(bce_losses)
+    return avg_bce, std_bce
 
 def fit_gmm_on_latent(model, loader, n_components=75):
     model.eval()
