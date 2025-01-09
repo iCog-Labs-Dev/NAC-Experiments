@@ -2,42 +2,14 @@ import torch
 import torch.nn as nn
 
 class Encoder(nn.Module):
-    def __init__(self, latent_dim):
+    def __init__(self, latent_dim, input_dim, hidden_dims):
         super(Encoder, self).__init__()
         self.model = nn.Sequential(
-            nn.Linear(28 * 28, 512),
-            nn.ReLU(True),
-            nn.Linear(512, 256),
-            nn.ReLU(True),
-            nn.Linear(256, 128),
-            nn.ReLU(True),
-            nn.Linear(128, latent_dim)
-        )
-        self._initialize_weights()
-
-    def _initialize_weights(self):
-        for m in self.model:
-            if isinstance(m, nn.Linear):
-                nn.init.normal_(m.weight, mean=0.0, std=0.02)
-                if m.bias is not None:
-                    nn.init.zeros_(m.bias)
-
-    def forward(self, x):
-        x = x.view(-1, 28 * 28)  # Flatten image
-        z = self.model(x)
-        return z
-
-class Decoder(nn.Module):
-    def __init__(self, latent_dim):
-        super(Decoder, self).__init__()
-        self.model = nn.Sequential(
-            nn.Linear(latent_dim, 128),
-            nn.ReLU(True),
-            nn.Linear(128, 256),
-            nn.ReLU(True),
-            nn.Linear(256, 512),
-            nn.ReLU(True),
-            nn.Linear(512, 28 * 28),
+            nn.Linear(input_dim, hidden_dims[0]),
+            nn.ReLU(),
+            nn.Linear(hidden_dims[0], hidden_dims[1]),
+            nn.ReLU(),
+            nn.Linear(hidden_dims[1], latent_dim),
             nn.Sigmoid()
         )
         self._initialize_weights()
@@ -45,7 +17,32 @@ class Decoder(nn.Module):
     def _initialize_weights(self):
         for m in self.model:
             if isinstance(m, nn.Linear):
-                nn.init.normal_(m.weight, mean=0.0, std=0.02)
+                nn.init.normal_(m.weight, mean=0.0, std=0.055)
+                if m.bias is not None:
+                    nn.init.zeros_(m.bias)
+
+    def forward(self, x):
+        x = x.view(-1, 28 * 28)  
+        z = self.model(x)
+        return z
+
+class Decoder(nn.Module):
+    def __init__(self, latent_dim, input_dim, hidden_dims):
+        super(Decoder, self).__init__()
+        self.model = nn.Sequential(
+            nn.Linear(latent_dim, hidden_dims[1]),
+            nn.ReLU(),
+            nn.Linear(hidden_dims[1], hidden_dims[0]),
+            nn.ReLU(),
+            nn.Linear(hidden_dims[0], input_dim),
+            nn.Sigmoid()
+        )
+        self._initialize_weights()
+
+    def _initialize_weights(self):
+        for m in self.model:
+            if isinstance(m, nn.Linear):
+                nn.init.normal_(m.weight, mean=0.0, std=0.055)
                 if m.bias is not None:
                     nn.init.zeros_(m.bias)
 
