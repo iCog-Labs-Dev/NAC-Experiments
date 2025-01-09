@@ -191,32 +191,32 @@ num_epochs = 50
 sim_start_time = time.time()
 print("--------------- Training ---------------")
 for epoch in range(1, num_epochs + 1): 
-    train_bce = train(model, train_loader, optimizer, epoch)
+    train_bce, train_std = train(model, train_loader, optimizer, epoch)
     print(f'Epoch [{epoch}/{num_epochs}]')
-    print(f'Train BCE: {train_bce:.4f}')
+    print(f'Train BCE: {train_bce:.4f}, Deviation: {train_std}')
 
 # Stop time profiling
 sim_time = time.time() - sim_start_time
 print(f"Training Time = {sim_time:.4f} seconds")
 
-print("--------------- Fitting GMM on latent space ---------------")
-gmm_train = fit_gmm_on_latent(model, train_loader, n_components=75)
-print("GMM fitting completed.")
+# print("--------------- Fitting GMM on latent space ---------------")
+# gmm_train = fit_gmm_on_latent(model, train_loader, n_components=75)
+# print("GMM fitting completed.")
 
 print("--------------- Evaluating ---------------")
-eval_bce = evaluate(model, dev_loader)
-print(f'Eval BCE: {eval_bce:.4f}')
+eval_bce, eval_std = evaluate(model, dev_loader)
+print(f'Eval BCE: {eval_bce:.4f}, Deviation: {eval_std}')
 
 print("--------------- Testing ---------------")
 inference_start_time = time.time()
-test_bce = evaluate(model, test_loader)
+test_bce, test_std = evaluate(model, test_loader)
 inference_time = time.time() - inference_start_time
-print(f'Test BCE: {test_bce:.4f}')
+print(f'Test BCE: {test_bce:.4f}, Deviation: {test_std}')
 print(f"Inference Time = {inference_time:.4f} seconds")
 
-print("--------------- Masked MSE ---------------")
-masked_mse_result = masked_mse(model, test_loader)
-print(f"Masked MSE: {masked_mse_result:.4f}")
+# print("--------------- Masked MSE ---------------")
+# masked_mse_result = masked_mse(model, test_loader)
+# print(f"Masked MSE: {masked_mse_result:.4f}")
 
 err = evaluate_classification(model, train_loader, test_loader)
 print(f"Classifation Error: {err:.2f}")
