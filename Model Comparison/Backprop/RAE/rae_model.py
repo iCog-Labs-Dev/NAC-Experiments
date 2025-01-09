@@ -74,3 +74,8 @@ class RegularizedAutoencoder(nn.Module):
         z = self.encoder(x)
         recon_x = self.decoder(z)
         return recon_x
+
+    def compute_loss(self, x, recon_x):
+        reconstruction_loss = self.reconstruction_loss(recon_x, x)
+        l2_penalty = self.compute_l2_penalty()
+        return -(reconstruction_loss + l2_penalty)
