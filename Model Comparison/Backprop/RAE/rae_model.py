@@ -52,16 +52,24 @@ class Decoder(nn.Module):
         return x_recon
 
 class RegularizedAutoencoder(nn.Module):
-    def __init__(self, latent_dim, learning_rate=0.001, l2_lambda=1e-5):
+    def __init__(self, latent_dim,input_dim, hidden_dims, learning_rate=0.1, l2_lambda=1e-3):
         super(RegularizedAutoencoder, self).__init__() 
-        self.encoder = Encoder(latent_dim) 
-        self.decoder = Decoder(latent_dim)
+        self.encoder = Encoder(latent_dim, input_dim, hidden_dims) 
+        self.decoder = Decoder(latent_dim, input_dim, hidden_dims)
+        self.reconstruction_loss = nn.BCELoss()
         self.l2_lambda = l2_lambda
         self.optimizer = torch.optim.SGD(
             list(self.encoder.parameters()) + list(self.decoder.parameters()), 
-            lr=learning_rate, 
-            weight_decay = self.l2_lambda
+            lr=learning_rate
         )
+
+    def compute_l2_penalty(self):
+        l2_penalty = 0
+        for param in self.decoder.parameters():
+            if param.requires_grad:
+                l2_penalty += torch.sum(param**2)
+        return self.l2_lambda * l2_penalty
+
     def forward(self, x):
         z = self.encoder(x)
         recon_x = self.decoder(z)
