@@ -83,26 +83,27 @@ def rescale_gradients(model, radius=5):
 
 def train(model, loader, optimizer, epoch):
     model.train()
-    total_bce = 0.0
+    bce_losses = []
 
     for batch_idx, (data, _) in enumerate(tqdm(loader)):
-        data = data / 255.0
+        data = (data > 0.5).float()
         data = data.view(data.size(0), -1)  
+        
         optimizer.zero_grad()
-
         reconstructed = model(data)
         reconstructed = reconstructed.view(reconstructed.size(0), -1) 
     
         # Loss for reconstruction
-        bce_loss = F.binary_cross_entropy(reconstructed, data)
+        bce_loss = F.binary_cross_entropy(reconstructed, data, reduction="sum")
         bce_loss.backward()
-        rescale_gradients(model, radius=5)
+        torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=5.0)
         optimizer.step()
 
-        total_bce += bce_loss.item()
+        bce_losses.append(bce_loss.item() / data.size(0))
 
-    avg_bce = total_bce / len(loader.dataset)
-    return avg_bce
+    avg_bce = np.mean(bce_losses)
+    std_bce = np.std(bce_losses)
+    return avg_bce, std_bce
 
 def evaluate(model, loader):
     model.eval()
