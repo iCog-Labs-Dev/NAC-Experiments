@@ -48,3 +48,22 @@ class GMM:
                 weighted_cov = (resp[:, k].unsqueeze(1) * diff).t() @ diff
                 self.covariances[k] = weighted_cov / nk[k] + 1e-6 * torch.eye(n_features, device=data.device)
                 self.chol_decomps[k] = torch.linalg.cholesky(self.covariances[k])
+
+    def _estimate_log_prob(self, data):
+        """
+        Estimates the log-probability of the data under each component.
+        """
+        n_samples, n_features = data.size()
+        log_prob = torch.zeros((n_samples, self.k), device=data.device)
+
+        for k in range(self.k):
+            diff = data - self.means[k]
+            cov_inv = torch.linalg.inv(self.covariances[k])
+            log_det_cov = torch.logdet(self.covariances[k])
+            quad_form = (diff @ cov_inv) * diff
+            quad_form = quad_form.sum(dim=1)
+
+            two_pi = torch.tensor(2 * np.pi, device=data.device)
+            log_prob[:, k] = -0.5 * (n_features * torch.log(two_pi) + log_det_cov + quad_form)
+
+        return log_prob
