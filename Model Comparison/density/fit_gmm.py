@@ -2,7 +2,7 @@ import torch
 import pickle
 from gmm import GMM
 
-def fit_gmm_from_loader(data_loader, model, latent_dim, gmm_file="gmm.pkl", n_components=75, max_iter=50,
+def fit_gmm(data_loader, model, latent_dim, gmm_file="gmm.pkl", n_components=75, max_iter=50,
                         assume_diag_cov=False, init_kmeans=True, device=None):
     """
     Fit a GMM using latent representations extracted from a model.
@@ -49,5 +49,4 @@ def fit_gmm_from_loader(data_loader, model, latent_dim, gmm_file="gmm.pkl", n_co
     print(f"Saving GMM to file: {gmm_file}")
     with open(gmm_file, 'wb') as f:
         pickle.dump(gmm, f)
-
     return gmm
