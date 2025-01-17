@@ -2,7 +2,7 @@ import torch
 import numpy as np
 
 
-def evaluate_gmm(data_loader, model, gmm, latent_dim, num_samples=5000, batch_size=200, binarize_x=True):
+def evaluate_logpx(data_loader, model, gmm, latent_dim, num_samples=5000, batch_size=200, binarize_x=True):
     """
     Evaluate the marginal log-likelihood log p(x) for a dataset using a trained GMM and model.
 
