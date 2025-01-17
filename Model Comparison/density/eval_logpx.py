@@ -41,15 +41,12 @@ def evaluate_logpx(data_loader, model, gmm, latent_dim, num_samples=5000, batch_
                 if binarize_x:
                     logp_xz = torch.sum(x * torch.log(x_recon) + (1 - x) * torch.log(1 - x_recon), dim=1)
                 else:
-                    # Gaussian log likelihood
                     sigma = 1.0
                     diff = (x - x_recon)
                     logp_xz = torch.sum(-(diff ** 2) / (2 * sigma**2) - 0.5 * torch.log(2 * np.pi * sigma**2), dim=1)
 
-                # Use log-sum-exp trick to estimate log p(x)
                 logpx = torch.logsumexp(logp_xz, dim=0) - np.log(num_samples)
                 logpx_list.append(logpx.item())
 
     mean_logpx = np.mean(logpx_list)
-    print(f"Mean log p(x): {mean_logpx:.4f}")
     return mean_logpx
