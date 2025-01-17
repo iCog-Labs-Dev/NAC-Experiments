@@ -105,3 +105,15 @@ class GMM:
         """
         log_resp = self._estimate_log_prob(data) + torch.log(self.weights)
         return torch.argmax(log_resp, dim=1)
+    
+    def score_samples(self, data):
+        """
+        Computes the average log-likelihood of the data under the GMM.
+        Args:
+            data (torch.Tensor): The input data (n_samples, n_features).
+        Returns:
+            float: Average log-likelihood.
+        """
+        log_probs = self._estimate_log_prob(data)
+        log_weighted_prob = log_probs + torch.log(self.weights)
+        return torch.logsumexp(log_weighted_prob, dim=1).mean().item()
