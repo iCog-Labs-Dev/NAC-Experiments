@@ -94,3 +94,14 @@ class GMM:
 
         samples = torch.cat(samples, dim=0)
         return torch.clamp(samples, 0, 1)
+    
+    def predict(self, data):
+        """
+        Predicts the component labels for the data.
+        Args:
+            data (torch.Tensor): The input data (n_samples, n_features).
+        Returns:
+            torch.Tensor: Predicted component labels (n_samples,).
+        """
+        log_resp = self._estimate_log_prob(data) + torch.log(self.weights)
+        return torch.argmax(log_resp, dim=1)
