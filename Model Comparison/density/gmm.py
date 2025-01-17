@@ -67,3 +67,30 @@ class GMM:
             log_prob[:, k] = -0.5 * (n_features * torch.log(two_pi) + log_det_cov + quad_form)
 
         return log_prob
+
+    def sample(self, n_samples, mode_i=-1):
+        """
+        Samples data points from the GMM.
+        Args:
+            n_samples (int): Number of samples to generate.
+            mode_i (int): If >= 0, samples only from the specified component. Defaults to -1 (samples from all components).
+        Returns:
+            torch.Tensor: Generated samples (n_samples, n_features).
+        """
+        if mode_i >= 0:
+            eps = torch.randn((n_samples, self.means.size(1)), device=self.means.device)
+            samples = self.means[mode_i] + eps @ self.chol_decomps[mode_i].t()
+            return samples
+
+        component_samples = torch.multinomial(self.weights, n_samples, replacement=True)
+        samples = []
+
+        for k in range(self.k):
+            n_k_samples = (component_samples == k).sum()
+            if n_k_samples > 0:
+                eps = torch.randn((n_k_samples, self.means.size(1)), device=self.means.device)
+                samples_k = self.means[k] + eps @ self.chol_decomps[k].t()
+                samples.append(samples_k)
+
+        samples = torch.cat(samples, dim=0)
+        return torch.clamp(samples, 0, 1)
