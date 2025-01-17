@@ -24,7 +24,7 @@ def fit_gmm(data_loader, model, latent_dim, gmm_file="gmm.pkl", n_components=75,
     if device is None:
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    print("Extracting latent vectors from DataLoader using the provided model.")
+    print("Extracting latent vectors from dataLoader using the provided model.")
     model.to(device)
     model.eval()
     data_list = []
