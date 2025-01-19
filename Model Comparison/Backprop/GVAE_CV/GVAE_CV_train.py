@@ -73,12 +73,13 @@ test_loader = DataLoader(dataset=test_dataset, batch_size = 200, shuffle = False
 def train(model, loader, optimizer, epoch):
     model.train()
     running_loss = 0.0
-    total_bce = 0.0
+    bce_losses = []
     total_nll = 0.0
     total_correct = 0
     total_samples = 0
     threshold = 0.1
     for batch_idx, (data, _) in enumerate(tqdm(loader)):
+        data = (data > 0.5).float()
         data = data.view(data.size(0), -1)  # Flatten the input data to shape (batch_size, input_dim)
         optimizer.zero_grad()
 
@@ -97,17 +98,21 @@ def train(model, loader, optimizer, epoch):
         bce_loss = F.binary_cross_entropy(reconstructed, data)
         log_probs = torch.log(reconstructed + 1e-9)  # Add small value for numerical stability
         nll_loss = F.nll_loss(log_probs, data.argmax(dim=-1))
-        loss.backward()
+        
+        #calculating BCE
+        bce_loss = F.binary_cross_entropy(reconstructed, data,reduction = "sum")
+        bce_loss.backward()
+        torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=5.0)
         optimizer.step()
+        bce_losses.append(bce_loss.item() / data.size(0))
 
         running_loss += loss.item()
-        total_bce += bce_loss.item()
         total_nll += nll_loss.item()
 
         torch.save(model.state_dict(), "trained_model.pth")
 
     avg_loss = running_loss / len(loader)
-    avg_bce = total_bce / len(loader)
+    avg_bce = np.mean(bce_losses)
     avg_nll = total_nll / len(loader)
     accuracy = total_correct / (total_samples * data.size(1)) * 100
     print(f'Epoch [{epoch}], MSE: {avg_loss:.4f}, BCE: {avg_bce:.4f}, NLL: {avg_nll:.4f}, Accuracy: {accuracy}%')
@@ -116,7 +121,7 @@ def train(model, loader, optimizer, epoch):
 def evaluate(model, loader):
     model.eval()
     eval_loss = 0.0
-    total_bce = 0.0
+    bce_losses = []
     total_nll = 0.0
     total_correct = 0
     total_samples = 0
@@ -124,6 +129,7 @@ def evaluate(model, loader):
     total_kld = 0.0
     with torch.no_grad():
         for batch_idx, (data, _) in enumerate(loader):
+            data = (data > 0.5).float()
             data = data.view(data.size(0), -1) 
             reconstructed, mu = model(data)
             reconstructed = reconstructed.view(reconstructed.size(0), -1) 
@@ -135,8 +141,8 @@ def evaluate(model, loader):
             reconstructed_np = reconstructed.cpu().numpy()
             
             # Calculating BCE
-            bce_loss = F.binary_cross_entropy(reconstructed, data)
-            total_bce += bce_loss.item()
+            bce_loss = F.binary_cross_entropy(reconstructed, data, reduction="sum")
+            bce_losses.append(bce_loss.item() / data.size(0))
 
             # Calculating NLL
             log_probs = torch.log(reconstructed + 1e-9)  # Add small value for numerical stability
@@ -153,7 +159,7 @@ def evaluate(model, loader):
             total_samples += data.size(0) 
 
     avg_loss = eval_loss / len(loader)
-    avg_bce = total_bce / len(loader)
+    avg_bce = avg_bce = np.mean(bce_losses)
     avg_nll = total_nll / len(loader)
     accuracy = total_correct / (total_samples * data.size(1)) * 100
     avg_kld = total_kld / len(loader)
@@ -161,7 +167,29 @@ def evaluate(model, loader):
     print(f'MSE: {avg_loss:.4f}, BCE: {avg_bce:.4f}, NLL: {avg_nll:.4f}, Accuracy: {accuracy:.2f}%, KLD: {avg_kld:.4f}')
 
     return avg_loss, avg_bce, avg_nll, avg_kld, accuracy
+def masked_mse(model, loader):
+    model.eval()
+    total_mse = 0.0
+    total_samples = 0
+    with torch.no_grad():
+        for data, _ in loader:
+            data = data / 255.0
+            data = data.view(data.size(0), -1)
 
+            mask = torch.ones_like(data, dtype=torch.bool)
+            mask[:, : data.size(1) // 2] = 0
+
+            masked_data = data * mask.float()
+
+            reconstructed = model(masked_data).view(data.size(0), -1)
+
+            mse = F.mse_loss(reconstructed[~mask], data[~mask], reduction="sum")
+            total_mse += mse.item()
+            total_samples += data.size(0)
+
+    avg_mse = total_mse / (total_samples * data.size(1) // 2)
+    return avg_mse
+    
 num_epochs = 50
 sim_start_time = time.time()  # Start time profiling
 
@@ -185,4 +213,7 @@ test_loss, test_bce, test_nll, test_kld, test_accuracy = evaluate(model, test_lo
 inference_time = time.time() - inference_start_time
 print(f"Inference Time = {inference_time:.4f} seconds")
 print(f'Test MSE: {test_loss:.4f},Test BCE: {test_bce:.4f}, Test NLL: {test_nll:.4f}, Test KLD: {test_kld:.4f}, Test Accuracy: {test_accuracy:.2f}%')
+print("---Masked MSE---")
+masked_mse_loss = masked_mse(model, test_loader)
+print(f'Masked MSE: {masked_mse_loss:.4f}')
 
