@@ -7,6 +7,10 @@ from tqdm import tqdm
 from GVAE_CV_model import CV_VAE  
 import sys, getopt as gopt, time
 from ngclearn.utils.metric_utils import measure_KLD
+from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import accuracy_score
+from sklearn.mixture import GaussianMixture
+
 
 class NumpyDataset(Dataset):
     def __init__(self, dataX, dataY=None):
@@ -181,6 +185,44 @@ def fit_gmm_on_latent(model, loader, n_components=75):
     gmm.fit(latents)
     print("GMM fitted on latent representations.")
     return gmm
+
+def classification_error(model, train_loader, test_loader):
+    model.eval()
+    train_latents, train_labels = [], []
+    test_latents, test_labels = [], []
+
+    with torch.no_grad():
+        for data, label in train_loader:
+            data = data.view(data.size(0), -1)
+            if label is not None:
+                z = model.encoder(data)
+                train_latents.append(z.cpu().numpy())
+                train_labels.append(label.cpu().numpy())
+
+    with torch.no_grad():
+        for data, label in test_loader:
+            data = data.view(data.size(0), -1)
+            if label is not None:
+                z = model.encoder(data)
+                test_latents.append(z.cpu().numpy())
+                test_labels.append(label.cpu().numpy())
+
+    train_latents = np.vstack(train_latents)
+    train_labels = np.hstack(train_labels).reshape(-1)
+    test_latents = np.vstack(test_latents)
+    test_labels = np.hstack(test_labels).reshape(-1)
+
+    print(f"Train Latents Shape: {train_latents.shape}")
+    print(f"Train Labels Shape: {train_labels.shape}")
+    print(f"Test Latents Shape: {test_labels.shape}")
+    print(f"Test Labels Shape: {test_labels.shape}")
+
+    clf = LogisticRegression(max_iter=50)
+    clf.fit(train_latents, train_labels)
+
+    predictions = clf.predict(test_latents)
+    err = 100 * (1 - accuracy_score(test_labels, predictions))
+    return err
 def masked_mse(model, loader):
     model.eval()
     total_mse = 0.0
@@ -230,4 +272,5 @@ print(f'Test MSE: {test_loss:.4f},Test BCE: {test_bce:.4f}, Test NLL: {test_nll:
 print("---Masked MSE---")
 masked_mse_loss = masked_mse(model, test_loader)
 print(f'Masked MSE: {masked_mse_loss:.4f}')
-
+err = classification_error(model, train_loader, test_loader)
+print(f"Classifation Error: {err:.2f}")
