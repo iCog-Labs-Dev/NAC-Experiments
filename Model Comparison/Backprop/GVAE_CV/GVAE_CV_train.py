@@ -167,6 +167,20 @@ def evaluate(model, loader):
     print(f'MSE: {avg_loss:.4f}, BCE: {avg_bce:.4f}, NLL: {avg_nll:.4f}, Accuracy: {accuracy:.2f}%, KLD: {avg_kld:.4f}')
 
     return avg_loss, avg_bce, avg_nll, avg_kld, accuracy
+def fit_gmm_on_latent(model, loader, n_components=75):
+    model.eval()
+    latents = []
+    with torch.no_grad():
+        for data, _ in loader:
+            data = data.view(data.size(0), -1)
+            z = model.encoder(data)
+            latents.append(z.cpu().numpy())
+    latents = np.vstack(latents)
+
+    gmm = GaussianMixture(n_components=n_components, covariance_type='full')
+    gmm.fit(latents)
+    print("GMM fitted on latent representations.")
+    return gmm
 def masked_mse(model, loader):
     model.eval()
     total_mse = 0.0
