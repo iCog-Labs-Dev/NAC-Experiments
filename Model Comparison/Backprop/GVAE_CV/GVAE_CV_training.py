@@ -4,12 +4,14 @@ from torch.utils.data import DataLoader, Dataset
 import torch.nn.functional as F
 import numpy as np
 from tqdm import tqdm
-from GVAE_model import VAE
+from GVAE_CV_model import GVAE
 from sklearn.mixture import GaussianMixture
 import scipy.stats as stats
 import sys
 import getopt as gopt
 import time
+from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import accuracy_score
 
 
 # Data Loading Classes and Functions
@@ -73,14 +75,14 @@ test_dataset = NumpyDataset(testX, testY)
 test_loader = DataLoader(dataset=test_dataset, batch_size=200, shuffle=False)
 
 
-def vae_loss(recon_x, x, mu, logvar):
+def vae_loss(recon_x, x, mu, fixed_logvar):
     recon_x = recon_x.view(recon_x.size(0), -1)
     x = x.view(x.size(0), -1)
     recon_loss = F.binary_cross_entropy(recon_x, x, reduction="sum")
-    beta = 0.01
+
     # KL Divergence
-    kl_loss = -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp())
-    kl_loss = beta * kl_loss
+    kl_loss = -0.5 * torch.sum(1 + fixed_logvar - mu.pow(2) - torch.exp(fixed_logvar))
+    kl_loss = kl_loss / 20
     return recon_loss + kl_loss
 
 
@@ -88,30 +90,9 @@ def rescale_gradients(model, max_norm=5.0):
     torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=max_norm)
 
 
-# MNIST images are 28x28, flattened to 784
-input_dim = 784
-latent_dim = 20
-hidden_dim = [360, 360]
-vae = VAE(input_dim=input_dim, hidden_dim=hidden_dim, latent_dim=latent_dim)
-
-# Training Loop (Example)
-
-# optimizer = torch.optim.Adam(vae.parameters(), lr=0.001)
-optimizer = torch.optim.SGD(vae.parameters(), lr=0.01)
-
-
 def train_model(model, train_loader):
 
-    # MNIST images are 28x28, flattened to 784
-    input_dim = 784
-    latent_dim = 20
-    hidden_dim = [360, 360]
-    vae = model(input_dim=input_dim, hidden_dim=hidden_dim, latent_dim=latent_dim)
-
-    # Training Loop (Example)
-
-    # optimizer = torch.optim.Adam(vae.parameters(), lr=0.001)
-    optimizer = torch.optim.SGD(vae.parameters(), lr=0.01)
+    optimizer = torch.optim.SGD(model.parameters(), lr=0.02)
 
     model.train()
     for epoch in range(50):
@@ -123,9 +104,9 @@ def train_model(model, train_loader):
             data = data.view(data.size(0), -1)
             optimizer.zero_grad()
 
-            recon_data, mu, logvar = model(data)
+            recon_data, mu = model(data)
             recon_data = recon_data.view(recon_data.size(0), -1)
-            loss = vae_loss(recon_data, data, mu, logvar)
+            loss = vae_loss(recon_data, data, mu, fixed_logvar)
             loss.backward()
             rescale_gradients(model)
             optimizer.step()
@@ -143,7 +124,7 @@ def bce_loss(model, loader):
         for data, _ in loader:
             data = data.view(data.size(0), -1)
             data = (data > 0.5).float()
-            recon_data, _, _ = model(data)
+            recon_data, _ = model(data)
             recon_data = recon_data.view(data.size(0), -1)
 
             bce = F.binary_cross_entropy(recon_data, data, reduction="sum")
@@ -174,7 +155,7 @@ def masked_mse_loss(model, loader):
 
             masked_data = data * mask.float()
             masked_data = (masked_data > 0.5).float()
-            reconstructed, _, _ = model(masked_data)
+            reconstructed, _ = model(masked_data)
             reconstructed = reconstructed.view(data.size(0), -1)
 
             mse = F.mse_loss(reconstructed[~mask], data[~mask], reduction="sum")
@@ -218,7 +199,7 @@ def classification_loss(model, data_loader, latent_dim, num_classes):
                 target = torch.argmax(target, dim=1)
 
             # Extract latent representations and collect labels
-            mu, _ = model.encoder(data)
+            mu = model.encoder(data)
             latent_representations.append(mu.cpu().numpy())
             labels.append(target.cpu().numpy())
 
@@ -255,7 +236,7 @@ def fit_gmm(latent_vectors, n_components=75):
 
 
 # Function to calculate Monte Carlo log likelihood
-def monte_carlo_log_likelihood(gmm, vae, data_loader, n_samples=5000):
+def monte_carlo_log_likelihood(gmm, gvae, data_loader, n_samples=5000):
     """
     Calculate the Monte Carlo log likelihood:
     log p(x) ≈ log E_{z ~ GMM}[p(x|z) * p(z)]
@@ -270,7 +251,7 @@ def monte_carlo_log_likelihood(gmm, vae, data_loader, n_samples=5000):
     with torch.no_grad():
         for i in range(0, n_samples, data_loader.batch_size):
             batch_z = z_samples[i : i + data_loader.batch_size]
-            recon_x = vae.decoder(batch_z)
+            recon_x = gvae.decoder(batch_z)
             log_p_x_given_z.extend(
                 -torch.nn.functional.binary_cross_entropy(
                     recon_x, recon_x, reduction="none"
@@ -298,7 +279,7 @@ def density_modeling(model, loader):
             tqdm(train_loader, desc="Processing Latent Vectors")
         ):
             data = data.view(data.size(0), -1)
-            mu, _ = model.encoder(data)
+            mu = model.encoder(data)
             latent_vectors.append(mu.cpu().numpy())
 
     print("Finished processing latent vectors. Fitting GMM...")
@@ -311,30 +292,38 @@ def density_modeling(model, loader):
     print("GMM fitting complete. Calculating Monte Carlo log likelihood...")
 
     # Calculate Monte Carlo log likelihood
-    log_likelihood = monte_carlo_log_likelihood(gmm, vae, train_loader)
+    log_likelihood = monte_carlo_log_likelihood(gmm, model, train_loader)
     # print(f"Monte Carlo Log Likelihood: {log_likelihood:.4f}")
     return log_likelihood
 
 
 input_dim = 784
 latent_dim = 20
-hidden_dim = [360, 360]
-vae = VAE(input_dim=input_dim, hidden_dim=hidden_dim, latent_dim=latent_dim)
+hidden_dim = 360
+fixed_logvar = torch.tensor(0.0)
+gvae = GVAE(
+    input_dim=input_dim,
+    hidden_dim=hidden_dim,
+    latent_dim=latent_dim,
+    fixed_logvar=fixed_logvar,
+)
 
 sim_start_time = time.time()
 print("--------------- Training ---------------")
-train_model(vae, train_loader)
+train_model(gvae, train_loader)
 
 sim_time = time.time() - sim_start_time
 print(f"Training Time = {sim_time:.4f} seconds")
 
 print("--------------- Testing ---------------")
 inference_start_time = time.time()
-bce_loss = bce_loss(vae, test_loader)
-classification_loss = classification_loss(vae, test_loader)
-masked_mse = masked_mse_loss(vae, test_loader)
-log_likelihood = density_modeling(vae, test_loader)
-test_mse, test_loss, test_bce, test_accuracy = evaluate(model, test_loader)
+bce_loss = bce_loss(gvae, test_loader)
+classification_loss = classification_loss(
+    gvae, test_loader, latent_dim=latent_dim, num_classes=10
+)
+masked_mse = masked_mse_loss(gvae, test_loader)
+log_likelihood = density_modeling(gvae, test_loader)
+# test_mse, test_loss, test_bce, test_accuracy = evaluate(model, test_loader)
 inference_time = time.time() - inference_start_time
 print(
     f"Test MSE: {masked_mse:.4f}, Test BCE: {bce_loss:.4f}, Error Percentage: {classification_loss:.2f}%, LogLikelihood: {log_likelihood}"
