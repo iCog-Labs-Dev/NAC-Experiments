@@ -1,6 +1,7 @@
 import torch
 import numpy as np
 
+import torch.nn.functional as F
 
 def evaluate_logpx(data_loader, model, gmm, latent_dim, num_samples=5000, batch_size=200, binarize_x=True):
     """
@@ -39,7 +40,7 @@ def evaluate_logpx(data_loader, model, gmm, latent_dim, num_samples=5000, batch_
 
                 # Compute log p(x|z) using Binary Cross Entropy
                 if binarize_x:
-                    logp_xz = torch.sum(x * torch.log(x_recon) + (1 - x) * torch.log(1 - x_recon), dim=1)
+                    logp_xz = F.binary_cross_entropy(x_recon,x)  #torch.sum(x * torch.log(x_recon) + (1 - x) * torch.log(1 - x_recon), dim=1)
                 else:
                     sigma = 1.0
                     diff = (x - x_recon)
