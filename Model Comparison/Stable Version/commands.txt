@@ -1,0 +1,26 @@
+1. build the docker container:  
+```bash
+docker build -t ngc-gpu .
+```
+
+2. Run the docker container:
+```bash
+docker run --gpus all -it \
+  -v "$(pwd)/walkthroughs:/app/ngc-learn/walkthroughs" \
+  -w /app/ngc-learn/walkthroughs/walkthrough1" \
+  ngc-gpu \
+  
+
+2. Run your script with GPU: 
+```bash
+python3 sim_train.py --config=gncn_pdh/fit.cfg --gpu_id=0
+
+3. Run your script with GPU = 0 or CPU = -1:
+```bash
+python3 eval_logpx.py --config=gncn_pdh/analyze.cfg --gpu_id=-1 --n_trials=1
+python3 fit_gmm.py --config=gncn_pdh/analyze.cfg --gpu_id=0
+python3 extract_latents.py --config=gncn_pdh/analyze.cfg --gpu_id=0 
+
+
+
+docker run --gpus all -it   --runtime=nvidia   -e NVIDIA_VISIBLE_DEVICES=all   -v "$(pwd)/walkthroughs:/app/ngc-learn/walkthroughs"   -w /app/ngc-learn/walkthroughs/walkthrough1   ngc-gpu   bash
