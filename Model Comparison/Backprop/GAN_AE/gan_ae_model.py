@@ -68,3 +68,18 @@ class Discriminator(nn.Module):
         z = F.relu(self.fc2(z))
         z = torch.sigmoid(self.fc3(z))
         return z
+    
+class GANAE(nn.Module):
+    def __init__(self, input_dim, hidden_dims, latent_dim, l2_lambda):
+        super(GANAE, self).__init__()
+        self.encoder = Encoder(input_dim, hidden_dims, latent_dim)
+        self.decoder = Decoder(latent_dim, hidden_dims, input_dim)
+        self.discriminator = Discriminator(latent_dim, hidden_dims)
+        self.l2_lambda = l2_lambda
+
+    def compute_l2_penalty(self):
+        l2_penalty = 0
+        for param in self.decoder.parameters():
+            if param.requires_grad:
+                l2_penalty += torch.sum(param**2)
+        return self.l2_lambda * l2_penalty
