@@ -3,10 +3,12 @@ import sys
 import os
 import torch
 import torch.nn.functional as F
+from torch import optim
 import numpy as np
-import tqdm
+from tqdm import tqdm
 from torch.utils.data import DataLoader
 import getopt as gopt
+from gan_ae_model import GANAE
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from utils.numpy_dataset import NumpyDataset
 
@@ -81,3 +83,16 @@ def train(model, loader, optimizer, epoch):
 
     avg_loss = np.mean(total_losses)
     return avg_loss
+
+input_dim = 28 * 28
+hidden_dims = [360, 360]
+latent_dim = 20
+l2_lambda= 1e-3
+model = GANAE(input_dim, hidden_dims, latent_dim, l2_lambda)
+num_epochs = 50
+optimizer = optim.Adam(model.parameters(), lr=0.02)
+
+for epoch in range(1, num_epochs + 1):
+    avg_loss = train(model, train_loader, optimizer, num_epochs)
+    print(f'Epoch [{epoch}/{num_epochs}]')
+    print(f'Avg Loss = {avg_loss:.4f}')
