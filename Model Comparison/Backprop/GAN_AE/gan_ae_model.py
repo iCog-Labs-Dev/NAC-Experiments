@@ -83,3 +83,16 @@ class GANAE(nn.Module):
             if param.requires_grad:
                 l2_penalty += torch.sum(param**2)
         return self.l2_lambda * l2_penalty
+    
+    def reparameterize(self, mu, logvar):
+        std = torch.exp(0.5 * logvar)
+        eps = torch.randn_like(std)
+        return mu + eps * std
+
+    def forward(self, x):
+        mu, logvar = self.encoder(x)
+        z = self.reparameterize(mu, logvar)
+        x_recon = self.decoder(z)
+        real_or_fake = self.discriminator(z)
+        l2_penalty = self.compute_l2_penalty()
+        return x_recon, real_or_fake, mu, logvar, l2_penalty
