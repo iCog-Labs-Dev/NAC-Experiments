@@ -47,3 +47,24 @@ class Decoder(nn.Module):
         z = F.relu(self.fc2(z))
         z = torch.sigmoid(self.fc3(z))
         return z
+    
+class Discriminator(nn.Module):
+    def __init__(self, latent_dim, hidden_dims):
+        super(Discriminator, self).__init__()
+        self.fc1 = nn.Linear(latent_dim, hidden_dims[0])
+        self.fc2 = nn.Linear(hidden_dims[0], hidden_dims[1])
+        self.fc3 = nn.Linear(hidden_dims[1], 1)
+
+        self._init_weights()
+
+    def _init_weights(self):
+        for layer in [self.fc1, self.fc2, self.fc3]:
+            if isinstance(layer, nn.Linear):
+                nn.init.normal_(layer.weight, mean=0.0, std=0.055)
+                nn.init.constant_(layer.bias, 0.0)
+
+    def forward(self, z):
+        z = F.relu(self.fc1(z))
+        z = F.relu(self.fc2(z))
+        z = torch.sigmoid(self.fc3(z))
+        return z
