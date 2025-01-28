@@ -13,7 +13,7 @@ from torch import optim
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from utils.numpy_dataset import NumpyDataset
-from utils.metrics import evaluate_perc_err, masked_mse
+from utils.metrics import classification_error, masked_mse
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
 from density.fit_gmm import fit_gmm
 from density.eval_logpx import evaluate_logpx
@@ -106,7 +106,7 @@ def evaluate_model(model, train_loader, test_loader, latent_dim, n_components=75
     logging.info(f"Test BCE loss: {results['Test_BCE']:.4f}")
 
     logging.info("Evaluating classification error...")
-    results['%Err'] = evaluate_perc_err(model, train_loader, test_loader)
+    results['%Err'] = classification_error(model, train_loader, test_loader)
     logging.info(f"Classification error: {results['%Err']:.4f}%")
 
     logging.info("Evaluating M-MSE...")
