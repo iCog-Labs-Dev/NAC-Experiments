@@ -1,6 +1,7 @@
 import logging
 import sys
 import os
+import time
 import torch
 import torch.nn.functional as F
 from torch import optim
@@ -84,6 +85,33 @@ def train(model, loader, optimizer, epoch):
     avg_loss = np.mean(total_losses)
     return avg_loss
 
+def evaluate(model, loader):
+    logging.info("Starting model evaluation...")
+    inference_start_time = time.time()
+
+    model.eval()
+    logging.info("Calculating Binary Cross-Entropy (BCE) loss...")
+    total_losses = []
+    with torch.no_grad():
+        for data, _ in loader:
+            data = (data > 0.5).float()
+            data = data.view(data.size(0), -1)
+
+            x_recon, real_or_fake, mu, logvar, l2_penalty = model(data)
+            x_recon = x_recon.view(data.size(0), -1)
+
+            reconstruction_loss = F.binary_cross_entropy(x_recon, data, reduction="sum")
+            discriminator_loss = F.binary_cross_entropy(real_or_fake, torch.ones_like(real_or_fake), reduction= "sum")
+            total_loss = reconstruction_loss + discriminator_loss + l2_penalty
+
+            total_losses.append(total_loss.item() / data.size(0))
+
+    avg_bce = np.mean(total_losses)
+    logging.info(f"Test BCE loss: {avg_bce:.4f}")
+    inference_time = time.time() - inference_start_time
+    logging.info(f"Inference time: {inference_time:.4f}")
+    return avg_bce, inference_time
+
 input_dim = 28 * 28
 hidden_dims = [360, 360]
 latent_dim = 20
@@ -92,7 +120,11 @@ model = GANAE(input_dim, hidden_dims, latent_dim, l2_lambda)
 num_epochs = 50
 optimizer = optim.Adam(model.parameters(), lr=0.02)
 
+# Training
 for epoch in range(1, num_epochs + 1):
     avg_loss = train(model, train_loader, optimizer, num_epochs)
     print(f'Epoch [{epoch}/{num_epochs}]')
     print(f'Avg Loss = {avg_loss:.4f}')
+
+# Evaluation
+test_bce, inference_time = evaluate(model, test_loader)
