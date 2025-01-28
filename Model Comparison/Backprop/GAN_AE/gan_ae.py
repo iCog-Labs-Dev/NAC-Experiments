@@ -17,6 +17,7 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from utils.numpy_dataset import NumpyDataset
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
 from density.fit_gmm import fit_gmm
+from density.eval_logpx import evaluate_logpx
 
 seed_value = 42
 torch.manual_seed(seed_value)
@@ -95,7 +96,7 @@ def train(model, loader, optimizer, epoch):
     avg_loss = np.mean(total_losses)
     return avg_loss
 
-def evaluate(model, loader, n_components=75):
+def evaluate(model, loader, n_components=75, num_samples = 5000):
     logging.info("Starting model evaluation...")
     inference_start_time = time.time()
     results = {}
@@ -131,6 +132,10 @@ def evaluate(model, loader, n_components=75):
     logging.info("Fitting GMM on latent space...")
     gmm = fit_gmm(train_loader, model, latent_dim=latent_dim, n_components=n_components)
     logging.info("Finished fitting GMM.")
+
+    logging.info("Evaluating Monte Carlo log-likelihood...") 
+    results['log_p(x)'] = evaluate_logpx(test_loader, model, gmm, latent_dim=latent_dim, num_samples=num_samples)
+    logging.info(f"Monte Carlo log-likelihood: {results['log_p(x)']:.4f}")
 
     results['Total_inference_time'] = time.time() - inference_start_time
     logging.info(f"Total inference time: {results['Total_inference_time']:.2f} sec")
@@ -229,11 +234,11 @@ model = GANAE(input_dim, hidden_dims, latent_dim, l2_lambda)
 num_epochs = 50
 optimizer = optim.Adam(model.parameters(), lr=0.02)
 
-# # Training
-# for epoch in range(1, num_epochs + 1):
-#     avg_loss = train(model, train_loader, optimizer, num_epochs)
-#     print(f'Epoch [{epoch}/{num_epochs}]')
-#     print(f'Avg Loss = {avg_loss:.4f}')
+# Training
+for epoch in range(1, num_epochs + 1):
+    avg_loss = train(model, train_loader, optimizer, num_epochs)
+    print(f'Epoch [{epoch}/{num_epochs}]')
+    print(f'Avg Loss = {avg_loss:.4f}')
 
 # Evaluation
 results = evaluate(model, test_loader)
