@@ -4,56 +4,6 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import accuracy_score
 import torch.nn.functional as F
 
-def evaluate_perc_err(model, train_loader, test_loader):
-    """
-    Evaluate a model's classification performance using latent representations and logistic regression.
-
-    This function extracts latent representations from the encoder of the given model for both training and testing datasets.
-    It then trains a logistic regression classifier on the latent representations of the training data and evaluates its 
-    classification error on the test data.
-
-    Args:
-        model: The trained model containing an encoder to extract latent representations.
-        train_loader: DataLoader providing the training dataset.
-        test_loader: DataLoader providing the testing dataset.
-
-    Returns:
-        err: Classification error (percentage) on the test dataset.
-        
-    """
-    model.eval()
-    train_latents, train_labels = [], []
-    test_latents, test_labels = [], []
-    
-    # Extract latent representations from data
-    with torch.no_grad():
-        for data, label in train_loader:
-            data = data.view(data.size(0), -1)
-            if label is not None:
-                z = model.encoder(data)
-                train_latents.append(z.cpu().numpy())
-                train_labels.append(label.cpu().numpy())
-    
-    with torch.no_grad():
-        for data, label in test_loader:
-            data = data.view(data.size(0), -1)
-            if label is not None:
-                z = model.encoder(data)
-                test_latents.append(z.cpu().numpy())
-                test_labels.append(label.cpu().numpy())
-
-    train_latents = np.vstack(train_latents)
-    train_labels = np.hstack(train_labels).reshape(-1)
-    test_latents = np.vstack(test_latents)
-    test_labels = np.hstack(test_labels).reshape(-1)
-
-    clf = LogisticRegression(max_iter=1000)
-    clf.fit(train_latents, train_labels)
-
-    predictions = clf.predict(test_latents)
-    err = 100 * (1 - accuracy_score(test_labels, predictions))
-    return err
-
 def masked_mse(model, loader):
     """
     Computes the average masked mean squared error (MSE) loss for a model. 
@@ -68,14 +18,13 @@ def masked_mse(model, loader):
     Returns:
         float: Average masked MSE loss across all samples.
     """
-
     model.eval()
     total_mse = 0.0
     total_samples = 0
     total_masked_elements = 0
+
     with torch.no_grad():
         for data, _ in loader:
-
             data = data.view(data.size(0), -1)
             data = (data > 0.5).float()
             mask = torch.ones_like(data, dtype=torch.bool)
@@ -83,9 +32,15 @@ def masked_mse(model, loader):
 
             masked_data = data * mask.float()
             masked_data = (masked_data > 0.5).float()
-            reconstructed = model(masked_data)
-            reconstructed = reconstructed.view(data.size(0), -1)
 
+            output = model(masked_data)
+
+            if isinstance(output, tuple):
+                reconstructed = output[0]  
+            else:
+                reconstructed = output
+
+            reconstructed = reconstructed.view(data.size(0), -1)
             mse = F.mse_loss(reconstructed[~mask], data[~mask], reduction="sum")
             total_mse += mse.item() * data.size(0)
             total_samples += data.size(0)
@@ -94,3 +49,60 @@ def masked_mse(model, loader):
     avg_mse = total_mse / (total_samples * data.size(1) // 2)
 
     return avg_mse
+
+def extract_latents(encoder, dataloader):
+    """
+    Extracts latent representations from a trained encoder.
+    
+    Parameters:
+    encoder: Trained encoder model.
+    dataloader: Dataloader containing the dataset.
+
+    Returns:
+        Extracted latent representations, and corresponding labels.
+    """
+    encoder.eval()
+    latents, labels = [], []
+
+    with torch.no_grad():
+        for batch_X, batch_Y in dataloader:
+            batch_X = batch_X 
+            batch_X = (batch_X > 0.5).float()  
+
+            output = encoder(batch_X)
+
+            if isinstance(output, tuple):  
+                Z = output[0] 
+            else:
+                Z = output 
+
+            latents.append(Z.view(Z.size(0), -1).cpu().numpy()) 
+            labels.append(batch_Y.cpu().numpy())
+
+    return np.vstack(latents), np.hstack(labels) 
+
+
+def classification_error(encoder, train_loader, test_loader):
+    """
+    Computes the classification error using a log-linear model (logistic regression)
+    fit to the latent representations.
+
+    Parameters:
+    encoder: Trained encoder model.
+    train_loader: Training dataloader.
+    test_loader: Testing dataloader.
+
+    Returns:
+    float: Classification error in percentage.
+    """
+    Z_train, Y_train = extract_latents(encoder, train_loader)
+    Z_test, Y_test = extract_latents(encoder, test_loader)
+
+    classifier = LogisticRegression(max_iter=1000, solver='lbfgs', multi_class='multinomial')
+    classifier.fit(Z_train, Y_train)
+
+    Y_pred = classifier.predict(Z_test)
+
+    error = 1 - accuracy_score(Y_test, Y_pred)
+
+    return error * 100  
