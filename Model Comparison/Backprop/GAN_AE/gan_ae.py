@@ -88,10 +88,11 @@ def train(model, loader, optimizer, epoch):
 def evaluate(model, loader):
     logging.info("Starting model evaluation...")
     inference_start_time = time.time()
+    results = {}
 
     model.eval()
     logging.info("Calculating Binary Cross-Entropy (BCE) loss...")
-    total_losses = []
+    total_losses = [] 
     with torch.no_grad():
         for data, _ in loader:
             data = (data > 0.5).float()
@@ -106,11 +107,44 @@ def evaluate(model, loader):
 
             total_losses.append(total_loss.item() / data.size(0))
 
-    avg_bce = np.mean(total_losses)
-    logging.info(f"Test BCE loss: {avg_bce:.4f}")
-    inference_time = time.time() - inference_start_time
-    logging.info(f"Inference time: {inference_time:.4f}")
-    return avg_bce, inference_time
+    results['Test_BCE'] = np.mean(total_losses)
+    logging.info(f"Test BCE loss: {results['Test_BCE']:.4f}")
+
+    logging.info("Evaluating M-MSE...")
+    results['M-MSE'] = masked_mse(model, test_loader)
+    logging.info(f"M-MSE: {results['M-MSE']:.4f}")
+
+    results['Total_inference_time'] = time.time() - inference_start_time
+    logging.info(f"Total inference time: {results['Total_inference_time']:.2f} sec")
+    return results
+
+def masked_mse(model, loader):
+    model.eval()
+    total_mse = 0.0
+    total_samples = 0
+    total_masked_elements = 0
+    with torch.no_grad():
+        for data, _ in loader:
+
+            data = data.view(data.size(0), -1)
+            data = (data > 0.5).float()
+            mask = torch.ones_like(data, dtype=torch.bool)
+            mask[:, : data.size(1) // 2] = 0
+
+            masked_data = data * mask.float()
+            masked_data = (masked_data > 0.5).float()
+
+            mu, _ = model.encoder(masked_data)
+            reconstructed = model.decoder(mu)  
+            reconstructed = reconstructed.view(data.size(0), -1)
+
+            mse = F.mse_loss(reconstructed[~mask], data[~mask], reduction="sum")
+            total_mse += mse.item() * data.size(0)
+            total_samples += data.size(0)
+            total_masked_elements += (~mask).sum().item()
+
+    avg_mse = total_mse / (total_samples * data.size(1) // 2)
+    return avg_mse
 
 input_dim = 28 * 28
 hidden_dims = [360, 360]
@@ -127,4 +161,6 @@ for epoch in range(1, num_epochs + 1):
     print(f'Avg Loss = {avg_loss:.4f}')
 
 # Evaluation
-test_bce, inference_time = evaluate(model, test_loader)
+results = evaluate(model, test_loader)
+m_mse = masked_mse(model, test_loader)
+
