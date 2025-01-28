@@ -10,8 +10,14 @@ from tqdm import tqdm
 from torch.utils.data import DataLoader
 import getopt as gopt
 from gan_ae_model import GANAE
+from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import accuracy_score
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from utils.numpy_dataset import NumpyDataset
+
+seed_value = 69  
+torch.manual_seed(seed_value)
+np.random.seed(seed_value)
 
 # Set up logging
 logging.basicConfig(
@@ -114,6 +120,10 @@ def evaluate(model, loader):
     results['M-MSE'] = masked_mse(model, test_loader)
     logging.info(f"M-MSE: {results['M-MSE']:.4f}")
 
+    logging.info("Evaluating classification error...")
+    results['%Err'] = classification_error(model, train_loader, test_loader)
+    logging.info(f"Classification error: {results['%Err']:.4f}%")
+
     results['Total_inference_time'] = time.time() - inference_start_time
     logging.info(f"Total inference time: {results['Total_inference_time']:.2f} sec")
     return results
@@ -146,6 +156,63 @@ def masked_mse(model, loader):
     avg_mse = total_mse / (total_samples * data.size(1) // 2)
     return avg_mse
 
+def extract_latents(encoder, dataloader):
+    """
+    Extracts latent representations from a trained encoder.
+    
+    Parameters:
+    encoder: Trained encoder model.
+    dataloader: Dataloader containing the dataset.
+
+    Returns:
+        Extracted latent representations, and corresponding labels.
+    """
+    encoder.eval()
+    latents, labels = [], []
+
+    with torch.no_grad():
+        for batch_X, batch_Y in dataloader:
+            batch_X = batch_X 
+            batch_X = (batch_X > 0.5).float()  
+
+            output = encoder(batch_X)
+
+            if isinstance(output, tuple):  
+                Z = output[0] 
+            else:
+                Z = output 
+
+            latents.append(Z.cpu().numpy()) 
+            labels.append(batch_Y.cpu().numpy())
+
+    return np.vstack(latents), np.hstack(labels) 
+
+
+def classification_error(encoder, train_loader, test_loader):
+    """
+    Computes the classification error using a log-linear model (logistic regression)
+    fit to the latent representations.
+
+    Parameters:
+    encoder: Trained encoder model.
+    train_loader: Training dataloader.
+    test_loader: Testing dataloader.
+
+    Returns:
+    float: Classification error in percentage.
+    """
+    Z_train, Y_train = extract_latents(encoder, train_loader)
+    Z_test, Y_test = extract_latents(encoder, test_loader)
+
+    classifier = LogisticRegression(max_iter=50, solver='lbfgs', multi_class='multinomial')
+    classifier.fit(Z_train, Y_train)
+
+    Y_pred = classifier.predict(Z_test)
+
+    error = 1 - accuracy_score(Y_test, Y_pred)
+
+    return error * 100  
+
 input_dim = 28 * 28
 hidden_dims = [360, 360]
 latent_dim = 20
@@ -162,5 +229,3 @@ for epoch in range(1, num_epochs + 1):
 
 # Evaluation
 results = evaluate(model, test_loader)
-m_mse = masked_mse(model, test_loader)
-
