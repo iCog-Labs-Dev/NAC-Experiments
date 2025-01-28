@@ -6,6 +6,7 @@ import torch
 import torch.nn.functional as F
 from torch import optim
 import numpy as np
+import random
 from tqdm import tqdm
 from torch.utils.data import DataLoader
 import getopt as gopt
@@ -14,10 +15,13 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import accuracy_score
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from utils.numpy_dataset import NumpyDataset
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
+from density.fit_gmm import fit_gmm
 
-seed_value = 69  
+seed_value = 42
 torch.manual_seed(seed_value)
 np.random.seed(seed_value)
+random.seed(seed_value)
 
 # Set up logging
 logging.basicConfig(
@@ -91,7 +95,7 @@ def train(model, loader, optimizer, epoch):
     avg_loss = np.mean(total_losses)
     return avg_loss
 
-def evaluate(model, loader):
+def evaluate(model, loader, n_components=75):
     logging.info("Starting model evaluation...")
     inference_start_time = time.time()
     results = {}
@@ -123,6 +127,10 @@ def evaluate(model, loader):
     logging.info("Evaluating classification error...")
     results['%Err'] = classification_error(model, train_loader, test_loader)
     logging.info(f"Classification error: {results['%Err']:.4f}%")
+
+    logging.info("Fitting GMM on latent space...")
+    gmm = fit_gmm(train_loader, model, latent_dim=latent_dim, n_components=n_components)
+    logging.info("Finished fitting GMM.")
 
     results['Total_inference_time'] = time.time() - inference_start_time
     logging.info(f"Total inference time: {results['Total_inference_time']:.2f} sec")
@@ -204,7 +212,7 @@ def classification_error(encoder, train_loader, test_loader):
     Z_train, Y_train = extract_latents(encoder, train_loader)
     Z_test, Y_test = extract_latents(encoder, test_loader)
 
-    classifier = LogisticRegression(max_iter=50, solver='lbfgs', multi_class='multinomial')
+    classifier = LogisticRegression(max_iter=1000, solver='lbfgs', multi_class='multinomial')
     classifier.fit(Z_train, Y_train)
 
     Y_pred = classifier.predict(Z_test)
@@ -221,11 +229,11 @@ model = GANAE(input_dim, hidden_dims, latent_dim, l2_lambda)
 num_epochs = 50
 optimizer = optim.Adam(model.parameters(), lr=0.02)
 
-# Training
-for epoch in range(1, num_epochs + 1):
-    avg_loss = train(model, train_loader, optimizer, num_epochs)
-    print(f'Epoch [{epoch}/{num_epochs}]')
-    print(f'Avg Loss = {avg_loss:.4f}')
+# # Training
+# for epoch in range(1, num_epochs + 1):
+#     avg_loss = train(model, train_loader, optimizer, num_epochs)
+#     print(f'Epoch [{epoch}/{num_epochs}]')
+#     print(f'Avg Loss = {avg_loss:.4f}')
 
 # Evaluation
 results = evaluate(model, test_loader)
