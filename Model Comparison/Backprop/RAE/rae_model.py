@@ -2,28 +2,49 @@ import torch
 import torch.nn as nn
 
 class Encoder(nn.Module):
-    def __init__(self, latent_dim):
+    def __init__(self, latent_dim, input_dim, hidden_dims):
         super(Encoder, self).__init__()
         self.model = nn.Sequential(
-            nn.Linear(28 * 28, 512),
-            nn.ReLU(True),
-            nn.Linear(512, latent_dim)
+            nn.Linear(input_dim, hidden_dims[0]),
+            nn.ReLU(),
+            nn.Linear(hidden_dims[0], hidden_dims[1]),
+            nn.ReLU(),
+            nn.Linear(hidden_dims[1], latent_dim),
+            nn.Sigmoid()
         )
+        self._initialize_weights()
+
+    def _initialize_weights(self):
+        for m in self.model:
+            if isinstance(m, nn.Linear):
+                nn.init.normal_(m.weight, mean=0.0, std=0.055)
+                if m.bias is not None:
+                    nn.init.zeros_(m.bias)
 
     def forward(self, x):
-        x = x.view(-1, 28 * 28)  # Flatten image
+        x = x.view(-1, 28 * 28)  
         z = self.model(x)
         return z
 
 class Decoder(nn.Module):
-    def __init__(self, latent_dim):
+    def __init__(self, latent_dim, input_dim, hidden_dims):
         super(Decoder, self).__init__()
         self.model = nn.Sequential(
-            nn.Linear(latent_dim, 512),
-            nn.ReLU(True),
-            nn.Linear(512, 28 * 28),
-            nn.Softmax(dim=-1) 
+            nn.Linear(latent_dim, hidden_dims[1]),
+            nn.ReLU(),
+            nn.Linear(hidden_dims[1], hidden_dims[0]),
+            nn.ReLU(),
+            nn.Linear(hidden_dims[0], input_dim),
+            nn.Sigmoid()
         )
+        self._initialize_weights()
+
+    def _initialize_weights(self):
+        for m in self.model:
+            if isinstance(m, nn.Linear):
+                nn.init.normal_(m.weight, mean=0.0, std=0.055)
+                if m.bias is not None:
+                    nn.init.zeros_(m.bias)
 
     def forward(self, z):
         x_recon = self.model(z)
@@ -31,22 +52,30 @@ class Decoder(nn.Module):
         return x_recon
 
 class RegularizedAutoencoder(nn.Module):
-    def __init__(self, latent_dim, learning_rate=0.001, l2_lambda=1e-5):
+    def __init__(self, latent_dim,input_dim, hidden_dims, learning_rate=0.1, l2_lambda=1e-3):
         super(RegularizedAutoencoder, self).__init__() 
-        self.encoder = Encoder(latent_dim) 
-        self.decoder = Decoder(latent_dim)
-        self.reconstruction_loss = nn.MSELoss()
-        self.reconstruction_loss = nn.BCELoss() 
-        self.nll_loss = nn.NLLLoss()
-        self.optimizer = torch.optim.Adam(
+        self.encoder = Encoder(latent_dim, input_dim, hidden_dims) 
+        self.decoder = Decoder(latent_dim, input_dim, hidden_dims)
+        self.reconstruction_loss = nn.BCELoss()
+        self.l2_lambda = l2_lambda
+        self.optimizer = torch.optim.SGD(
             list(self.encoder.parameters()) + list(self.decoder.parameters()), 
-            lr=learning_rate, 
-            weight_decay=l2_lambda
+            lr=learning_rate
         )
+
+    def compute_l2_penalty(self):
+        l2_penalty = 0
+        for param in self.decoder.parameters():
+            if param.requires_grad:
+                l2_penalty += torch.sum(param**2)
+        return self.l2_lambda * l2_penalty
+
     def forward(self, x):
         z = self.encoder(x)
         recon_x = self.decoder(z)
         return recon_x
 
-    def compute_loss(self, recon_x, x):
-        return self.reconstruction_loss(recon_x, x)
+    def compute_loss(self, x, recon_x):
+        reconstruction_loss = self.reconstruction_loss(recon_x, x)
+        l2_penalty = self.compute_l2_penalty()
+        return -(reconstruction_loss + l2_penalty)
