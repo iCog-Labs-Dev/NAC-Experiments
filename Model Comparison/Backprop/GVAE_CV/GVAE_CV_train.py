@@ -1,13 +1,3 @@
-import torch
-import torch.optim as optim
-from torch.utils.data import DataLoader, Dataset
-import torch.nn.functional as F
-import numpy as np
-from tqdm import tqdm
-from GVAE_CV_model import CV_VAE  
-import sys, getopt as gopt, time
-from ngclearn.utils.metric_utils import measure_KLD
-
 class NumpyDataset(Dataset):
     def __init__(self, dataX, dataY=None):
         self.dataX = np.load(dataX) 
@@ -54,13 +44,6 @@ print("Train-set: X: {} | Y: {}".format(dataX, dataY))
 print("  Dev-set: X: {} | Y: {}".format(devX, devY))
 print("  Test-set: X: {} | Y: {}".format(testX, testY))
 
-latent_dim = 64  
-input_dim= 784
-hidden_dim= 400
-
-model = CV_VAE(input_dim= input_dim, latent_dim=latent_dim, hidden_dim=hidden_dim)
-optimizer = optim.Adam(model.parameters(), lr=0.001)
-
 train_dataset = NumpyDataset(dataX, dataY)
 train_loader = DataLoader(dataset=train_dataset, batch_size=200, shuffle=True)
 
@@ -70,119 +53,216 @@ dev_loader = DataLoader(dataset=dev_dataset, batch_size=200, shuffle=False)
 test_dataset = NumpyDataset(testX, testY)
 test_loader = DataLoader(dataset=test_dataset, batch_size = 200, shuffle = False)
 
-def train(model, loader, optimizer, epoch):
+def rescale_gradients(model, max_norm=5.0):
+    torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=max_norm)
+
+def train_model(model, train_loader):
+
+    optimizer = torch.optim.SGD(model.parameters(), lr=0.02)
+
     model.train()
-    running_loss = 0.0
-    total_bce = 0.0
-    total_nll = 0.0
-    total_correct = 0
-    total_samples = 0
-    threshold = 0.1
-    for batch_idx, (data, _) in enumerate(tqdm(loader)):
-        data = data.view(data.size(0), -1)  # Flatten the input data to shape (batch_size, input_dim)
-        optimizer.zero_grad()
+    for epoch in range(50):
+        total_loss = 0
+        total_samples = 0
+        for batch_idx, (data, _) in enumerate(train_loader):
 
-        # Forward pass: unpack the tuple returned by the model
-        reconstructed, mu = model(data)
-        reconstructed = reconstructed.view(reconstructed.size(0), -1)  # Flatten the output to (batch_size, input_dim)
+            data = (data > 0.5).float()
+            data = data.view(data.size(0), -1)
+            optimizer.zero_grad()
 
-        # Calculating accuracy
-        diff = torch.abs(reconstructed - data)
-        correct = torch.sum(diff < threshold, dim=1)
-        total_correct += correct.sum().item()
-        total_samples += data.size(0)
+            recon_data, mu = model(data)
+            recon_data = recon_data.view(recon_data.size(0), -1)
+            loss = totalloss(recon_data, data, mu, fixed_variance)
+            loss.backward()
+            rescale_gradients(model)
+            optimizer.step()
+            total_loss += loss.item()
+            total_samples += data.size(0)
+        print(f"Epoch {epoch + 1}, Total_Loss: {total_loss / len(train_loader.dataset):.4f}")
 
-        # Loss for reconstruction
-        loss = F.mse_loss(reconstructed, data)
-        bce_loss = F.binary_cross_entropy(reconstructed, data)
-        log_probs = torch.log(reconstructed + 1e-9)  # Add small value for numerical stability
-        nll_loss = F.nll_loss(log_probs, data.argmax(dim=-1))
-        loss.backward()
-        optimizer.step()
 
-        running_loss += loss.item()
-        total_bce += bce_loss.item()
-        total_nll += nll_loss.item()
+# GMM
+def fit_gmm(latent_vectors, n_components=75):
+    gmm = GaussianMixture(
+        n_components=n_components, covariance_type="full", random_state=42
+    )
+    gmm.fit(latent_vectors)
+    return gmm
 
-        torch.save(model.state_dict(), "trained_model.pth")
-
-    avg_loss = running_loss / len(loader)
-    avg_bce = total_bce / len(loader)
-    avg_nll = total_nll / len(loader)
-    accuracy = total_correct / (total_samples * data.size(1)) * 100
-    print(f'Epoch [{epoch}], MSE: {avg_loss:.4f}, BCE: {avg_bce:.4f}, NLL: {avg_nll:.4f}, Accuracy: {accuracy}%')
-    return avg_loss, avg_bce, avg_nll, accuracy
-
-def evaluate(model, loader):
+# Classification error
+def classification_error(model, data_loader, latent_dim, num_classes):
     model.eval()
-    eval_loss = 0.0
-    total_bce = 0.0
-    total_nll = 0.0
-    total_correct = 0
-    total_samples = 0
-    threshold = 0.1  
-    total_kld = 0.0
+    latent_representations = []
+    labels = []
+
     with torch.no_grad():
-        for batch_idx, (data, _) in enumerate(loader):
-            data = data.view(data.size(0), -1) 
-            reconstructed, mu = model(data)
-            reconstructed = reconstructed.view(reconstructed.size(0), -1) 
+        for batch in data_loader:
+            data, target = batch
 
-            loss = F.mse_loss(reconstructed, data)  
-            eval_loss += loss.item()
+            data = data.view(data.size(0), -1)
+
             
-            data_np = data.cpu().numpy()
-            reconstructed_np = reconstructed.cpu().numpy()
-            
-            # Calculating BCE
-            bce_loss = F.binary_cross_entropy(reconstructed, data)
-            total_bce += bce_loss.item()
+            if target.ndim > 1:
+                target = torch.argmax(target, dim=1)
 
-            # Calculating NLL
-            log_probs = torch.log(reconstructed + 1e-9)  # Add small value for numerical stability
-            nll_loss = F.nll_loss(log_probs, data.argmax(dim=-1))
-            total_nll += nll_loss.item()
-            # Calculating KLD
-            kld = measure_KLD(data_np, reconstructed_np)
-            total_kld = kld.item()
+            mu = model.encoder(data)
+            latent_representations.append(mu.cpu().numpy())
+            labels.append(target.cpu().numpy())
 
-            # Calculating accuracy
-            diff = torch.abs(reconstructed - data) 
-            correct = torch.sum(diff < threshold, dim=1)  
-            total_correct += correct.sum().item()  
-            total_samples += data.size(0) 
+    X = np.vstack(latent_representations)
+    y = np.hstack(labels)
 
-    avg_loss = eval_loss / len(loader)
-    avg_bce = total_bce / len(loader)
-    avg_nll = total_nll / len(loader)
-    accuracy = total_correct / (total_samples * data.size(1)) * 100
-    avg_kld = total_kld / len(loader)
+
+    assert (
+        X.shape[0] == y.shape[0]
+    ), "Mismatch in the number of samples between X and y!"
+
+    classifier = LogisticRegression(max_iter=1000, multi_class="multinomial")
+    classifier.fit(X, y)
+
+    y_pred = classifier.predict(X)
+    accuracy = accuracy_score(y, y_pred)
+
+    error_percentage = 100 * (1 - accuracy)
+    return error_percentage
+# M-MSE Loss
+def masked_mse_loss(model, loader):
+    model.eval()
+    total_mse = 0.0
+    total_samples = 0
+    total_masked_elements = 0
+    with torch.no_grad():
+        for data, _ in loader:
+
+            data = data.view(data.size(0), -1)
+            data = (data > 0.5).float()
+            mask = torch.ones_like(data, dtype=torch.bool)
+            mask[:, : data.size(1) // 2] = 0
+
+            masked_data = data * mask.float()
+            masked_data = (masked_data > 0.5).float()
+            reconstructed, _ = model(masked_data)
+            reconstructed = reconstructed.view(data.size(0), -1)
+
+            mse = F.mse_loss(reconstructed[~mask], data[~mask], reduction="sum")
+            total_mse += mse.item() * data.size(0)
+            total_samples += data.size(0)
+            total_masked_elements += (~mask).sum().item()
+
+    avg_mse = total_mse / (total_samples * data.size(1) // 2)
+
+    return avg_mse
+# BCE Loss
+def bce_loss(model, loader):
+    model.eval()
+    total_bce = 0.0
+    total_samples = 0
+    with torch.no_grad():
+        for data, _ in loader:
+            data = data.view(data.size(0), -1)
+            data = (data > 0.5).float()
+            recon_data, _ = model(data)
+            recon_data = recon_data.view(data.size(0), -1)
+
+            bce = F.binary_cross_entropy(recon_data, data, reduction="sum")
+            total_bce += bce.item()
+
+            total_samples += data.size(0)
+
+    # Normalize by the total number of elements
+    avg_bce = total_bce / total_samples
+
+    return avg_bce
     
-    print(f'MSE: {avg_loss:.4f}, BCE: {avg_bce:.4f}, NLL: {avg_nll:.4f}, Accuracy: {accuracy:.2f}%, KLD: {avg_kld:.4f}')
+def totalloss(recon_x, x, mu, fixed_variance):
+    recon_x = recon_x.view(recon_x.size(0), -1)
+    x = x.view(x.size(0), -1)
+    recon_loss = F.binary_cross_entropy(recon_x, x, reduction="sum")
+    kl_loss = -0.5 * torch.sum(1 + fixed_variance - mu.pow(2) - torch.exp(fixed_variance))
+    kl_loss = kl_loss / 20
+    return recon_loss + kl_loss
+# log likelihood
+def monte_carlo_log_likelihood(gmm, gvae, data_loader, n_samples=5000):
+    
+    gmm_samples, _ = gmm.sample(n_samples)
+    z_samples = torch.tensor(gmm_samples, dtype=torch.float32)
 
-    return avg_loss, avg_bce, avg_nll, avg_kld, accuracy
+    log_p_z = gmm.score_samples(gmm_samples)
+    log_p_x_given_z = []
 
-num_epochs = 50
+   
+    with torch.no_grad():
+        for i in range(0, n_samples, data_loader.batch_size):
+            batch_z = z_samples[i : i + data_loader.batch_size]
+            recon_x = gvae.decoder(batch_z)
+           
+            log_p_x_given_z.extend(
+                -torch.nn.functional.binary_cross_entropy(
+                    recon_x, recon_x, reduction="none"
+                )
+                .sum(dim=1)
+                .cpu()
+                .numpy()
+            )  
+
+    log_p_x_given_z = np.array(log_p_x_given_z)
+    log_likelihood = np.mean(log_p_z + log_p_x_given_z)
+    
+    return log_likelihood
+
+
+def final_modeling(model, loader):
+    latent_vectors = []
+    model.eval()
+
+    with torch.no_grad():
+        for batch_idx, (data, _) in enumerate(
+            tqdm(train_loader, desc="Processing Latent Vectors")
+        ):
+            data = data.view(data.size(0), -1)
+            mu = model.encoder(data)
+            latent_vectors.append(mu.cpu().numpy())
+    latent_vectors = np.vstack(latent_vectors)
+
+
+    # Fit the GMM
+    gmm = fit_gmm(latent_vectors, n_components=75)
+
+    # Calculate log likelihood
+    log_likelihood = monte_carlo_log_likelihood(gmm, model, train_loader)
+
+
+    return log_likelihood
+
+
+input_dim = 784
+latent_dim = 20
+hidden_dim = 360
+fixed_variance = torch.tensor(0.0)
+gvae = GVAE_CV(
+    input_dim=input_dim,
+    hidden_dim=hidden_dim,
+    latent_dim=latent_dim,
+    fixed_variance=fixed_variance
+)
 sim_start_time = time.time()  # Start time profiling
 
 print("--------------- Training ---------------")
-for epoch in range(1, num_epochs + 1): 
-    train_loss, train_bce, train_nll, train_accuracy = train(model, train_loader, optimizer, epoch)
-    print(f'Epoch [{epoch}/{num_epochs}]')
-    print(f'Train MSE: {train_loss:.4f}, Train BCE: {train_bce:.4f}, Train NLL: {train_nll:.4f}, Train Accuracy: {train_accuracy:.2f}%')
+train_model(gvae, train_loader)
 
 # Stop time profiling
 sim_time = time.time() - sim_start_time
 print(f"Training Time = {sim_time:.4f} seconds")
 
-print("--------------- Evaluating ---------------")
-eval_loss, eval_bce, eval_nll, eval_kld, eval_accuracy = evaluate(model, dev_loader)
-print(f'Eval MSE: {eval_loss:.4f}, Eval BCE: {eval_bce:.4f}, Eval NLL: {eval_nll:.4f}, Eval KLD: {eval_kld:.4f}, Eval Accuracy: {eval_accuracy:.2f}%')
+
 
 print("--------------- Testing ---------------")
-inference_start_time = time.time()
-test_loss, test_bce, test_nll, test_kld, test_accuracy = evaluate(model, test_loader)
-inference_time = time.time() - inference_start_time
-print(f"Inference Time = {inference_time:.4f} seconds")
-print(f'Test MSE: {test_loss:.4f},Test BCE: {test_bce:.4f}, Test NLL: {test_nll:.4f}, Test KLD: {test_kld:.4f}, Test Accuracy: {test_accuracy:.2f}%')
+bce_loss = bce_loss(gvae, test_loader)
+classification_error = classification_error(
+    gvae, test_loader, latent_dim=latent_dim, num_classes=10
+)
+masked_mse = masked_mse_loss(gvae, test_loader)
+log_likelihood = final_modeling(gvae, test_loader)
+
+print(f"Test M-MSE: {masked_mse:.4f}, Test BCE: {bce_loss:.4f}, Error(%): {classification_error:.2f}%, log p(x): {log_likelihood}")
 

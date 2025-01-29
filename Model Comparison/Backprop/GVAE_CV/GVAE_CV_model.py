@@ -1,22 +1,31 @@
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 
+import torch.optim as optim
+import torch.nn.functional as F
+from torch.utils.data import DataLoader, Dataset
+import numpy as np
+from tqdm import tqdm
+import argparse
+import sys, getopt as gopt, time
+from sklearn.mixture import GaussianMixture
+from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import accuracy_score
+import subprocess
+import os
 
 class Encoder(nn.Module):
     def __init__(self, input_dim=784, hidden_dim=360, latent_dim=20):
         super(Encoder, self).__init__()
-
-        # Four layers in the encoder
-        self.fc1 = nn.Linear(input_dim, hidden_dim)  # Input to hidden layer 1
-        self.fc2 = nn.Linear(hidden_dim, hidden_dim)  # Hidden layer 1 to hidden layer 2
-        self.fc3 = nn.Linear(hidden_dim, hidden_dim)  # Hidden layer 2 to hidden layer 3
-        self.fc_mu = nn.Linear(hidden_dim, latent_dim)  # Hidden layer 3 to mean
+         # Four layers in the encoder
+        self.fc1 = nn.Linear(input_dim, hidden_dim)  
+        self.fc2 = nn.Linear(hidden_dim, hidden_dim)  
+        self.fc3 = nn.Linear(hidden_dim, hidden_dim)  
+        self.fc_mu = nn.Linear(hidden_dim, latent_dim)  
 
         self._init_weights()
 
     def _init_weights(self, sigma=0.1):
-        # Gaussian initialization with tunable sigma
         for layer in [self.fc1, self.fc2, self.fc3, self.fc_mu]:
             nn.init.normal_(layer.weight, mean=0.0, std=sigma)
             nn.init.constant_(layer.bias, 0.0)
@@ -33,7 +42,6 @@ class Decoder(nn.Module):
     def __init__(self, latent_dim=20, hidden_dim=360, output_dim=784):
         super(Decoder, self).__init__()
 
-        # Four layers in the decoder
         self.fc1 = nn.Linear(latent_dim, hidden_dim)
         self.fc2 = nn.Linear(hidden_dim, hidden_dim)
         self.fc3 = nn.Linear(hidden_dim, output_dim)
@@ -41,7 +49,7 @@ class Decoder(nn.Module):
         self._init_weights()
 
     def _init_weights(self, sigma=0.1):
-        # Gaussian initialization with tunable sigma
+
         for layer in [self.fc1, self.fc2, self.fc3]:
             nn.init.normal_(layer.weight, mean=0.0, std=sigma)
             nn.init.constant_(layer.bias, 0.0)
@@ -49,7 +57,8 @@ class Decoder(nn.Module):
     def forward(self, z):
         z = F.relu(self.fc1(z))
         z = F.relu(self.fc2(z))
-        z = torch.sigmoid(self.fc3(z))  # Sigmoid activation in the output layer
+        z = torch.sigmoid(self.fc3(z))
+
         return z
 
 
@@ -60,6 +69,15 @@ class GVAE(nn.Module):
         input_dim=784,
         hidden_dim=360,
         latent_dim=20,
+        fixed_variance=torch.tensor(0.0),
+    ):
+        super(GVAE_CV, self).__init__()
+        self.encoder = Encoder(input_dim, hidden_dim, latent_dim)
+        self.decoder = Decoder(latent_dim, hidden_dim, input_dim)
+        self.fixed_variance = fixed_variance
+
+    def reparameterize(self, mu):
+        std = torch.exp(0.5 * self.fixed_variance)
         fixed_logvar=torch.tensor(0.0),
     ):
         super(GVAE, self).__init__()
