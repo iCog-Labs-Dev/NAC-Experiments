@@ -1,16 +1,31 @@
-class NumpyDataset(Dataset):
-    def __init__(self, dataX, dataY=None):
-        self.dataX = np.load(dataX) 
-        self.dataY = np.load(dataY) if dataY is not None else None 
+import torch
+import numpy as np
+import random
+import logging
+import sys
+import os
+import time
+import getopt as gopt
+from tqdm import tqdm
+import torch.nn.functional as F
+from torch import optim
+from torch.utils.data import DataLoader
+from GVAE_CV_model import GVAE_CV
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+from utils.numpy_dataset import NumpyDataset
 
-    def __len__(self):
-        return len(self.dataX)
+seed_value = 42
+torch.manual_seed(seed_value)
+np.random.seed(seed_value)
+random.seed(seed_value)
 
-    def __getitem__(self, idx):
-        data = torch.tensor(self.dataX[idx], dtype=torch.float32)
-        label = torch.tensor(self.dataY[idx], dtype=torch.long) if self.dataY is not None else None
-        return data, label
-    
+# Set up logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    handlers=[logging.StreamHandler()]  
+)
+
 options, remainder = gopt.getopt(sys.argv[1:], '',
                                  ["dataX=", "dataY=", "devX=", "devY=", "testX", "testY","verbosity="]
                                  )
@@ -53,33 +68,48 @@ dev_loader = DataLoader(dataset=dev_dataset, batch_size=200, shuffle=False)
 test_dataset = NumpyDataset(testX, testY)
 test_loader = DataLoader(dataset=test_dataset, batch_size = 200, shuffle = False)
 
-def rescale_gradients(model, max_norm=5.0):
-    torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=max_norm)
-
-def train_model(model, train_loader):
-
-    optimizer = torch.optim.SGD(model.parameters(), lr=0.02)
-
+def train(model, loader, optimizer, fixed_variance):
     model.train()
-    for epoch in range(50):
-        total_loss = 0
-        total_samples = 0
-        for batch_idx, (data, _) in enumerate(train_loader):
+    total_losses = []
 
-            data = (data > 0.5).float()
-            data = data.view(data.size(0), -1)
-            optimizer.zero_grad()
+    for batch_idx, (data, _) in enumerate(tqdm(loader)):
+        data = (data > 0.5).float()
+        data = data.view(data.size(0), -1)
+        optimizer.zero_grad()
 
-            recon_data, mu = model(data)
-            recon_data = recon_data.view(recon_data.size(0), -1)
-            loss = totalloss(recon_data, data, mu, fixed_variance)
-            loss.backward()
-            rescale_gradients(model)
-            optimizer.step()
-            total_loss += loss.item()
-            total_samples += data.size(0)
-        print(f"Epoch {epoch + 1}, Total_Loss: {total_loss / len(train_loader.dataset):.4f}")
+        recon_x, mu, z, l2_penalty = model(data)
+        recon_x = recon_x.view(recon_x.size(0), -1)
 
+        kl_loss = -0.5 * torch.sum(1 + fixed_variance - mu.pow(2) - torch.exp(fixed_variance))
+        kl_loss = kl_loss / 20
+        reconstruction_loss = F.binary_cross_entropy(recon_x, data, reduction="sum")
+        total_loss = reconstruction_loss + kl_loss + l2_penalty
+
+        total_loss.backward()
+        torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=5.0)
+        optimizer.step()
+
+        total_losses.append(total_loss.item() / data.size(0))
+
+    avg_loss = np.mean(total_losses)
+    return avg_loss
+
+input_dim = 28 * 28
+hidden_dim = [360, 360]
+latent_dim = 20
+l2_lambda = 1e-3
+fixed_variance=torch.tensor(0.0)
+model = GVAE_CV(input_dim, latent_dim, hidden_dim, l2_lambda, fixed_variance)
+optimizer = optim.SGD(model.parameters(), lr=0.02)
+num_epochs = 50
+
+logging.info("Starting model training...")
+sim_start_time = time.time()
+for epoch in range(1, num_epochs + 1):
+    avg_bce = train(model, train_loader, optimizer, fixed_variance)
+    logging.info(f'Epoch [{epoch}/{num_epochs}]  Train BCE = {avg_bce:.4f}')
+sim_time = time.time() - sim_start_time
+logging.info(f"Total training time: {sim_time:.2f} sec")   
 
 # GMM
 def fit_gmm(latent_vectors, n_components=75):
