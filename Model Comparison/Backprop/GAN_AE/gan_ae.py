@@ -79,13 +79,14 @@ def train(model, loader, optimizer, epoch):
     for batch_idx, (data, _) in enumerate(tqdm(loader)):
         data = (data > 0.5).float()
         data = data.view(data.size(0), -1)
+        optimizer.zero_grad()
         x_recon, real_or_fake, mu, logvar, l2_penalty = model(data)
 
         reconstruction_loss = F.binary_cross_entropy(x_recon, data, reduction="sum")
         discriminator_loss = F.binary_cross_entropy(real_or_fake, torch.ones_like(real_or_fake), reduction= "sum")
         total_loss = reconstruction_loss + discriminator_loss + l2_penalty
 
-        optimizer.zero_grad()
+        
         total_loss.backward()
         torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=5.0)
         optimizer.step()
