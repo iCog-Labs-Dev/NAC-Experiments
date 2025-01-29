@@ -18,6 +18,7 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')
 from density.fit_gmm import fit_gmm
 from density.eval_logpx import evaluate_logpx
 
+# Set random seed for reproducibility
 seed_value = 42
 torch.manual_seed(seed_value)
 np.random.seed(seed_value)
