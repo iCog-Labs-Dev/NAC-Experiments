@@ -1,5 +1,6 @@
 import torch
 import pickle
+import os
 from .gmm import GMM
 
 def fit_gmm(data_loader, model, latent_dim, gmm_file="gmm.pkl", n_components=75, max_iter=50,
@@ -24,7 +25,6 @@ def fit_gmm(data_loader, model, latent_dim, gmm_file="gmm.pkl", n_components=75,
     if device is None:
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    print("Extracting latent vectors from dataLoader using the provided model...")
     model.to(device)
     model.eval()
     data_list = []
@@ -34,13 +34,23 @@ def fit_gmm(data_loader, model, latent_dim, gmm_file="gmm.pkl", n_components=75,
             batch_data = batch[0].to(device)
             batch_data = (batch_data > 0.5).float()
             batch_data = batch_data.view(batch_data.size(0), -1)
-            latent_vectors = model.encoder(batch_data)
+            output = model.encoder(batch_data)
+
+            if isinstance(output, tuple):  
+                latent_vectors = output[0] 
+            else:
+                latent_vectors = output 
+
             data_list.append(latent_vectors)
 
     data = torch.cat(data_list, dim=0)
     assert data.size(1) == latent_dim, f"Expected latent dimension {latent_dim}, but got {data.size(1)}"
 
     print(f"Collected latent data shape: {data.shape}")
+
+    if os.path.exists(gmm_file):
+        os.remove(gmm_file)
+        print(f"Removed existing {gmm_file}")
 
     gmm = GMM(k=n_components, max_iter=max_iter, assume_diag_cov=assume_diag_cov, init_kmeans=init_kmeans)
     gmm.fit(data)

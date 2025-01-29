@@ -1,22 +1,27 @@
-import torch
-import os
-import time
 import logging
 import sys
+import os
+import time
+import torch
+import torch.nn.functional as F
+from torch import optim
 import numpy as np
+import random
 from tqdm import tqdm
 from torch.utils.data import DataLoader
-import torch.nn.functional as F
-from rae_model import RegularizedAutoencoder  
 import getopt as gopt
-from torch import optim
-
+from gan_ae_model import GANAE
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from utils.numpy_dataset import NumpyDataset
 from utils.metrics import classification_error, masked_mse
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
 from density.fit_gmm import fit_gmm
 from density.eval_logpx import evaluate_logpx
+
+seed_value = 42
+torch.manual_seed(seed_value)
+np.random.seed(seed_value)
+random.seed(seed_value)
 
 # Set up logging
 logging.basicConfig(
@@ -67,51 +72,61 @@ dev_loader = DataLoader(dataset=dev_dataset, batch_size=200, shuffle=False)
 test_dataset = NumpyDataset(testX, testY)
 test_loader = DataLoader(dataset=test_dataset, batch_size = 200, shuffle = False)
 
-# Training
 def train(model, loader, optimizer, epoch):
-
     model.train()
-    bce_losses = []
+    total_losses = []
 
     for batch_idx, (data, _) in enumerate(tqdm(loader)):
-        data = (data > 0.5).float().view(data.size(0), -1) 
+        data = (data > 0.5).float()
+        data = data.view(data.size(0), -1)
+        x_recon, real_or_fake, mu, logvar, l2_penalty = model(data)
+
+        reconstruction_loss = F.binary_cross_entropy(x_recon, data, reduction="sum")
+        discriminator_loss = F.binary_cross_entropy(real_or_fake, torch.ones_like(real_or_fake), reduction= "sum")
+        total_loss = reconstruction_loss + discriminator_loss + l2_penalty
+
         optimizer.zero_grad()
-        reconstructed = model(data).view(data.size(0), -1)     
-        bce_loss = F.binary_cross_entropy(reconstructed, data, reduction="sum")
-        bce_loss.backward()
+        total_loss.backward()
         torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=5.0)
         optimizer.step()
-        bce_losses.append(bce_loss.item() / data.size(0))
 
-    return np.mean(bce_losses)
+        total_losses.append(total_loss.item() / data.size(0))
 
-# Evaluation
-def evaluate_model(model, train_loader, test_loader, latent_dim, n_components=75, num_samples=5000):
+    avg_loss = np.mean(total_losses)
+    return avg_loss
+
+def evaluate(model, loader, n_components=75, num_samples = 5000):
     logging.info("Starting model evaluation...")
     inference_start_time = time.time()
     results = {}
+
     model.eval()
-
     logging.info("Calculating Binary Cross-Entropy (BCE) loss...")
-    bce_losses = []
+    total_losses = [] 
     with torch.no_grad():
-        for i, (data, _) in enumerate(test_loader):
-            data = (data > 0.5).float().view(data.size(0), -1)
-            reconstructed = model(data).view(data.size(0), -1)
-            bce_loss = F.binary_cross_entropy(reconstructed, data, reduction="sum")
-            bce_losses.append(bce_loss.item() / data.size(0))
-            if i % 10 == 0: 
-                logging.info(f"Processed {i+1} batches for BCE loss.")
-    results['Test_BCE'] = np.mean(bce_losses)
-    logging.info(f"Test BCE loss: {results['Test_BCE']:.4f}")
+        for data, _ in loader:
+            data = (data > 0.5).float()
+            data = data.view(data.size(0), -1)
 
-    logging.info("Evaluating classification error...")
-    results['%Err'] = classification_error(model, train_loader, test_loader)
-    logging.info(f"Classification error: {results['%Err']:.4f}%")
+            x_recon, real_or_fake, mu, logvar, l2_penalty = model(data)
+            x_recon = x_recon.view(data.size(0), -1)
+
+            reconstruction_loss = F.binary_cross_entropy(x_recon, data, reduction="sum")
+            discriminator_loss = F.binary_cross_entropy(real_or_fake, torch.ones_like(real_or_fake), reduction= "sum")
+            total_loss = reconstruction_loss + discriminator_loss + l2_penalty
+
+            total_losses.append(total_loss.item() / data.size(0))
+
+    results['Test_BCE'] = np.mean(total_losses)
+    logging.info(f"Test BCE loss: {results['Test_BCE']:.4f}")
 
     logging.info("Evaluating M-MSE...")
     results['M-MSE'] = masked_mse(model, test_loader)
     logging.info(f"M-MSE: {results['M-MSE']:.4f}")
+
+    logging.info("Evaluating classification error...")
+    results['%Err'] = classification_error(model, train_loader, test_loader)
+    logging.info(f"Classification error: {results['%Err']:.4f}%")
 
     logging.info("Fitting GMM on latent space...")
     gmm = fit_gmm(train_loader, model, latent_dim=latent_dim, n_components=n_components)
@@ -123,23 +138,21 @@ def evaluate_model(model, train_loader, test_loader, latent_dim, n_components=75
 
     results['Total_inference_time'] = time.time() - inference_start_time
     logging.info(f"Total inference time: {results['Total_inference_time']:.2f} sec")
-
     return results
 
 input_dim = 28 * 28
 hidden_dims = [360, 360]
 latent_dim = 20
-model = RegularizedAutoencoder(latent_dim=latent_dim, input_dim=input_dim, hidden_dims=hidden_dims)
-optimizer = optim.SGD(model.parameters(), lr=0.1)
+l2_lambda= 1e-3
+model = GANAE(input_dim, hidden_dims, latent_dim, l2_lambda)
 num_epochs = 50
+optimizer = optim.Adam(model.parameters(), lr=0.02)
 
-logging.info("Starting model training...")
-sim_start_time = time.time()
-for epoch in range(1, num_epochs + 1): 
-    train_bce = train(model, train_loader, optimizer, epoch)
-    logging.info(f"Epoch [{epoch}/{num_epochs}] Train BCE Loss: {train_bce:.4f}")
-sim_time = time.time() - sim_start_time
-logging.info(f"Total training time: {sim_time:.2f} sec")    
+# Training
+for epoch in range(1, num_epochs + 1):
+    avg_loss = train(model, train_loader, optimizer, num_epochs)
+    print(f'Epoch [{epoch}/{num_epochs}]')
+    print(f'Avg Loss = {avg_loss:.4f}')
 
-logging.info("Starting evaluation...")
-results = evaluate_model(model, train_loader, test_loader, latent_dim=latent_dim)
+# Evaluation
+results = evaluate(model, test_loader)
