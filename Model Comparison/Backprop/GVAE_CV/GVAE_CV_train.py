@@ -94,6 +94,31 @@ def train(model, loader, optimizer, fixed_variance):
     avg_loss = np.mean(total_losses)
     return avg_loss
 
+def evaluate(model, loader, fixed_variance):
+    logging.info("Starting model evaluation...")
+    model.eval()
+    logging.info("Calculating Binary Cross-Entropy (BCE) loss...")
+    total_losses = [] 
+    results = {}
+    with torch.no_grad():
+        for data, _ in loader:
+            data = (data > 0.5).float()
+            data = data.view(data.size(0), -1)
+
+            x_recon, mu, z, l2_penalty = model(data)
+            x_recon = x_recon.view(data.size(0), -1)
+
+            kl_loss = -0.5 * torch.sum(1 + fixed_variance - mu.pow(2) - torch.exp(fixed_variance))
+            kl_loss = kl_loss / 20 
+            reconstruction_loss = F.binary_cross_entropy(x_recon, data, reduction="sum")
+            total_loss = reconstruction_loss+ kl_loss + l2_penalty
+
+            total_losses.append(total_loss.item() / data.size(0))
+
+    results['Test_BCE'] = np.mean(total_losses)
+    logging.info(f"Test BCE loss: {results['Test_BCE']:.4f}")
+    return results
+
 input_dim = 28 * 28
 hidden_dim = [360, 360]
 latent_dim = 20
@@ -103,6 +128,7 @@ model = GVAE_CV(input_dim, latent_dim, hidden_dim, l2_lambda, fixed_variance)
 optimizer = optim.SGD(model.parameters(), lr=0.02)
 num_epochs = 50
 
+# Training
 logging.info("Starting model training...")
 sim_start_time = time.time()
 for epoch in range(1, num_epochs + 1):
@@ -110,6 +136,9 @@ for epoch in range(1, num_epochs + 1):
     logging.info(f'Epoch [{epoch}/{num_epochs}]  Train BCE = {avg_bce:.4f}')
 sim_time = time.time() - sim_start_time
 logging.info(f"Total training time: {sim_time:.2f} sec")   
+
+# Evaluation
+test_bce = evaluate(model, test_loader, fixed_variance)
 
 # GMM
 def fit_gmm(latent_vectors, n_components=75):
@@ -182,35 +211,7 @@ def masked_mse_loss(model, loader):
     avg_mse = total_mse / (total_samples * data.size(1) // 2)
 
     return avg_mse
-# BCE Loss
-def bce_loss(model, loader):
-    model.eval()
-    total_bce = 0.0
-    total_samples = 0
-    with torch.no_grad():
-        for data, _ in loader:
-            data = data.view(data.size(0), -1)
-            data = (data > 0.5).float()
-            recon_data, _ = model(data)
-            recon_data = recon_data.view(data.size(0), -1)
 
-            bce = F.binary_cross_entropy(recon_data, data, reduction="sum")
-            total_bce += bce.item()
-
-            total_samples += data.size(0)
-
-    # Normalize by the total number of elements
-    avg_bce = total_bce / total_samples
-
-    return avg_bce
-    
-def totalloss(recon_x, x, mu, fixed_variance):
-    recon_x = recon_x.view(recon_x.size(0), -1)
-    x = x.view(x.size(0), -1)
-    recon_loss = F.binary_cross_entropy(recon_x, x, reduction="sum")
-    kl_loss = -0.5 * torch.sum(1 + fixed_variance - mu.pow(2) - torch.exp(fixed_variance))
-    kl_loss = kl_loss / 20
-    return recon_loss + kl_loss
 # log likelihood
 def monte_carlo_log_likelihood(gmm, gvae, data_loader, n_samples=5000):
     
