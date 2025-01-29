@@ -54,7 +54,7 @@ class Decoder(nn.Module):
 class RegularizedAutoencoder(nn.Module):
     def __init__(self, latent_dim,input_dim, hidden_dims, learning_rate=0.1, l2_lambda=1e-3):
         super(RegularizedAutoencoder, self).__init__() 
-        self.encoder = Encoder(latent_dim, input_dim, hidden_dims) 
+        self.encoder = Encoder(input_dim, hidden_dims, latent_dim) 
         self.decoder = Decoder(latent_dim, input_dim, hidden_dims)
         self.reconstruction_loss = nn.BCELoss()
         self.l2_lambda = l2_lambda
