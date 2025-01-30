@@ -1,35 +1,31 @@
 import torch
 import torch.optim as optim
-from torch.utils.data import DataLoader, Dataset
+from torch.utils.data import DataLoader
 import torch.nn.functional as F
 import numpy as np
 from tqdm import tqdm
 from GVAE_model import VAE
-from sklearn.mixture import GaussianMixture
-import scipy.stats as stats
+import os
 import sys
+import random
+import logging
 import getopt as gopt
 import time
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+from utils.numpy_dataset import NumpyDataset
 
+# Set random seed for reproducibility
+seed_value = 42
+torch.manual_seed(seed_value)
+np.random.seed(seed_value)
+random.seed(seed_value)
 
-# Data Loading Classes and Functions
-class NumpyDataset(Dataset):
-    def __init__(self, dataX, dataY=None):
-        self.dataX = np.load(dataX)
-        self.dataY = np.load(dataY) if dataY is not None else None
-
-    def __len__(self):
-        return len(self.dataX)
-
-    def __getitem__(self, idx):
-        data = torch.tensor(self.dataX[idx], dtype=torch.float32)
-        label = (
-            torch.tensor(self.dataY[idx], dtype=torch.long)
-            if self.dataY is not None
-            else None
-        )
-        return data, label
-
+# Set up logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    handlers=[logging.StreamHandler()]  
+)
 
 options, remainder = gopt.getopt(
     sys.argv[1:],
@@ -61,8 +57,6 @@ for opt, arg in options:
     elif opt in ("--verbosity"):
         verbosity = int(arg.strip())
 
-
-# Create dataloaders
 train_dataset = NumpyDataset(dataX, dataY)
 train_loader = DataLoader(dataset=train_dataset, batch_size=200, shuffle=True)
 
@@ -73,89 +67,82 @@ test_dataset = NumpyDataset(testX, testY)
 test_loader = DataLoader(dataset=test_dataset, batch_size=200, shuffle=False)
 
 
-def vae_loss(recon_x, x, mu, logvar):
-    recon_x = recon_x.view(recon_x.size(0), -1)
-    x = x.view(x.size(0), -1)
-    recon_loss = F.binary_cross_entropy(recon_x, x, reduction="sum")
-    beta = 0.01
-    # KL Divergence
-    kl_loss = -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp())
-    kl_loss = beta * kl_loss
-    return recon_loss + kl_loss
-
-
-def rescale_gradients(model, max_norm=5.0):
-    torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=max_norm)
-
-
-# MNIST images are 28x28, flattened to 784
-input_dim = 784
-latent_dim = 20
-hidden_dim = [360, 360]
-vae = VAE(input_dim=input_dim, hidden_dim=hidden_dim, latent_dim=latent_dim)
-
-# Training Loop (Example)
-
-# optimizer = torch.optim.Adam(vae.parameters(), lr=0.001)
-optimizer = torch.optim.SGD(vae.parameters(), lr=0.01)
-
-
-def train_model(model, train_loader):
-
-    # MNIST images are 28x28, flattened to 784
-    input_dim = 784
-    latent_dim = 20
-    hidden_dim = [360, 360]
-    vae = model(input_dim=input_dim, hidden_dim=hidden_dim, latent_dim=latent_dim)
-
-    # Training Loop (Example)
-
-    # optimizer = torch.optim.Adam(vae.parameters(), lr=0.001)
-    optimizer = torch.optim.SGD(vae.parameters(), lr=0.01)
-
+def train(model, loader, optimizer):
     model.train()
-    for epoch in range(50):
-        total_loss = 0
-        total_samples = 0
-        for batch_idx, (data, _) in enumerate(train_loader):
+    total_losses = []
 
-            data = (data > 0.5).float()
-            data = data.view(data.size(0), -1)
-            optimizer.zero_grad()
+    for batch_idx, (data, _) in enumerate(tqdm(loader)):
+        data = (data > 0.5).float()
+        data = data.view(data.size(0), -1)
+        optimizer.zero_grad()
 
-            recon_data, mu, logvar = model(data)
-            recon_data = recon_data.view(recon_data.size(0), -1)
-            loss = vae_loss(recon_data, data, mu, logvar)
-            loss.backward()
-            rescale_gradients(model)
-            optimizer.step()
-            total_loss += loss.item()
-            total_samples += data.size(0)
-        print(f"Epoch {epoch + 1}, Loss: {total_loss / len(train_loader.dataset):.4f}")
+        recon_data, mu, logvar, l2_penality = model(data)
+        recon_data = recon_data.view(recon_data.size(0), -1)
 
+        kl_loss = -0.5 * torch.sum(1 + logvar - mu.pow(2) - torch.exp(logvar))
+        kl_loss = kl_loss / 20
+        bce_loss = F.binary_cross_entropy(recon_data, data, reduction="sum")
+        total_loss = bce_loss + kl_loss + l2_penality
 
-# Function to calculate the error of the model
-def bce_loss(model, loader):
-    model.eval()
-    total_bce = 0.0
-    total_samples = 0
-    with torch.no_grad():
-        for data, _ in loader:
-            data = data.view(data.size(0), -1)
-            data = (data > 0.5).float()
-            recon_data, _, _ = model(data)
-            recon_data = recon_data.view(data.size(0), -1)
+        total_loss.backward()
+        torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=5.0)
+        optimizer.step()
 
-            bce = F.binary_cross_entropy(recon_data, data, reduction="sum")
-            total_bce += bce.item()
+        total_losses.append(total_loss.item() / data.size(0))
 
-            total_samples += data.size(0)
-
-    # Normalize by the total number of elements
-    avg_bce = total_bce / total_samples
-
+    avg_bce = np.mean(total_losses)
     return avg_bce
 
+def evaluate(model, loader):
+    logging.info("Starting model evaluation...")
+    inference_start_time = time.time()
+
+    model.eval()
+    logging.info("Calculating Binary Cross-Entropy (BCE) loss...")
+    total_losses = []
+    results = {}
+
+    with torch.no_grad():
+        for data, _ in loader:
+            data = (data > 0.5).float()
+            data = data.view(data.size(0), -1)
+
+            recon_data, mu, logvar, l2_penality = model(data)
+            recon_data = recon_data.view(data.size(0), -1)
+
+            kl_loss = -0.5 * torch.sum(1 + logvar - mu.pow(2) - torch.exp(logvar))
+            kl_loss = kl_loss / 20
+            bce_loss = F.binary_cross_entropy(recon_data, data, reduction="sum")
+            total_loss = bce_loss + kl_loss + l2_penality
+
+            total_losses.append(total_loss.item() / data.size(0))
+
+    results['Test_BCE'] = np.mean(total_losses)
+    logging.info(f"Test BCE loss: {results['Test_BCE']:.4f}")
+
+    results['Total_inference_time'] = time.time() - inference_start_time
+    logging.info(f"Total inference time: {results['Total_inference_time']:.2f} sec")
+    return results
+
+input_dim = 28 * 28
+hidden_dim = [360, 360]
+latent_dim = 20
+l2_lambda = 1e-3
+model = VAE(input_dim, hidden_dim, latent_dim, l2_lambda)
+optimizer = optim.SGD(model.parameters(), lr=0.01)
+num_epochs = 50
+
+# Training
+logging.info("Starting model training...")
+sim_start_time = time.time()
+for epoch in range(1, num_epochs + 1):
+    train_bce =train(model, train_loader, optimizer)
+    logging.info(f'Epoch [{epoch}/{num_epochs}] BCE = {train_bce:.4f}')
+sim_time = time.time() - sim_start_time
+logging.info(f"Total training time: {sim_time:.2f} sec")  
+
+# Evaluation
+test_bce = evaluate(model, test_loader)
 
 # M-MSE Loss
 def masked_mse_loss(model, loader):
