@@ -27,11 +27,11 @@ class Encoder(nn.Module):
 
 
 class Decoder(nn.Module):
-    def __init__(self, latent_dim, hidden_dim, output_dim):
+    def __init__(self, latent_dim, hidden_dim, input_dim):
         super(Decoder, self).__init__()
-        self.fc1 = nn.Linear(latent_dim, hidden_dim[0])
-        self.fc2 = nn.Linear(hidden_dim[0], hidden_dim[1])
-        self.fc3 = nn.Linear(hidden_dim[1], input_dim)
+        self.fc1 = nn.Linear(latent_dim, hidden_dim[1])
+        self.fc2 = nn.Linear(hidden_dim[1], hidden_dim[0])
+        self.fc3 = nn.Linear(hidden_dim[0], input_dim)
 
         self._initialize_weights()
 
