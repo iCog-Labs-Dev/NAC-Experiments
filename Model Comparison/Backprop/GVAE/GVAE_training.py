@@ -70,7 +70,6 @@ dev_loader = DataLoader(dataset=dev_dataset, batch_size=200, shuffle=False)
 test_dataset = NumpyDataset(testX, testY)
 test_loader = DataLoader(dataset=test_dataset, batch_size=200, shuffle=False)
 
-
 def train(model, loader, optimizer):
     model.train()
     total_losses = []
@@ -164,4 +163,4 @@ sim_time = time.time() - sim_start_time
 logging.info(f"Total training time: {sim_time:.2f} sec")  
 
 # Evaluation
-test_bce = evaluate(model, test_loader)
+test_bce = evaluate(model, test_loader, n_components, num_samples)
