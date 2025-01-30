@@ -6,17 +6,12 @@ import torch.nn.functional as F
 class Encoder(nn.Module):
     def __init__(self, input_dim, hidden_dim, latent_dim):
         super(Encoder, self).__init__()
+        self.fc1 = nn.Linear(input_dim, hidden_dim[0])
+        self.fc2 = nn.Linear(hidden_dim[0], hidden_dim[1])
+        self.fc_mu = nn.Linear(hidden_dim[1], latent_dim)
+        self.fc_logvar = nn.Linear(hidden_dim[1], latent_dim)
 
-        self.fc1 = nn.Linear(input_dim, hidden_dim[0])  # Input to hidden layer 1
-        self.fc2 = nn.Linear(
-            hidden_dim[0], hidden_dim[1]
-        )  # Hidden layer 1 to hidden layer 2
-        self.fc_mu = nn.Linear(hidden_dim[1], latent_dim)  # Hidden layer 2 to mean
-        self.fc_logvar = nn.Linear(
-            hidden_dim[1], latent_dim
-        )  # Hidden layer 2 to log-variance
-
-        self._init_weights()
+        self._initialize_weights()
 
     def _init_weights(self, sigma=0.1):
         for layer in [self.fc1, self.fc2, self.fc_mu, self.fc_logvar]:
@@ -34,16 +29,11 @@ class Encoder(nn.Module):
 class Decoder(nn.Module):
     def __init__(self, latent_dim, hidden_dim, output_dim):
         super(Decoder, self).__init__()
+        self.fc1 = nn.Linear(latent_dim, hidden_dim[0])
+        self.fc2 = nn.Linear(hidden_dim[0], hidden_dim[1])
+        self.fc3 = nn.Linear(hidden_dim[1], input_dim)
 
-        self.fc1 = nn.Linear(
-            latent_dim, hidden_dim[0]
-        )  # Latent space to hidden layer 1
-        self.fc2 = nn.Linear(
-            hidden_dim[0], hidden_dim[1]
-        )  # Hidden layer 1 to hidden layer 2
-        self.fc3 = nn.Linear(hidden_dim[1], output_dim)  # Hidden layer 2 to output
-
-        self._init_weights()
+        self._initialize_weights()
 
     def _init_weights(self, sigma=0.1):
         for layer in [self.fc1, self.fc2, self.fc3]:
@@ -58,11 +48,19 @@ class Decoder(nn.Module):
 
 
 class VAE(nn.Module):
-    def __init__(self, input_dim, hidden_dim, latent_dim):
+    def __init__(self, input_dim, hidden_dim, latent_dim, l2_lambda):
         super(VAE, self).__init__()
         self.encoder = Encoder(input_dim, hidden_dim, latent_dim)
         self.decoder = Decoder(latent_dim, hidden_dim, input_dim)
-
+        self.l2_lambda = l2_lambda
+        
+    def compute_l2_penalty(self):
+        l2_penalty = 0
+        for param in self.decoder.parameters():
+            if param.requires_grad:
+                l2_penalty += torch.sum(param**2)
+        return self.l2_lambda * l2_penalty
+    
     def reparameterize(self, mu, logvar):
         std = torch.exp(0.5 * logvar)
         eps = torch.randn_like(std)
@@ -72,4 +70,5 @@ class VAE(nn.Module):
         mu, logvar = self.encoder(x)
         z = self.reparameterize(mu, logvar)
         recon_x = self.decoder(z)
-        return recon_x, mu, logvar
+        l2_penality = self.compute_l2_penalty()
+        return recon_x, mu, logvar, l2_penality
