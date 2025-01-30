@@ -19,7 +19,7 @@ from density.fit_gmm import fit_gmm
 from density.eval_logpx import evaluate_logpx
 
 # Set random seed for reproducibility
-seed_value = 42
+seed_value = 69
 torch.manual_seed(seed_value)
 np.random.seed(seed_value)
 random.seed(seed_value)
@@ -125,7 +125,7 @@ def evaluate_model(model, train_loader, test_loader, latent_dim, n_components, n
     logging.info(f"M-MSE: {results['M-MSE']:.4f}")
 
     logging.info("Fitting GMM on latent space...")
-    gmm = fit_gmm(train_loader, model, latent_dim, n_components)
+    gmm = fit_gmm(train_loader, model, latent_dim, n_components = n_components)
     logging.info("Finished fitting GMM.")
 
     logging.info("Evaluating Monte Carlo log-likelihood...") 
