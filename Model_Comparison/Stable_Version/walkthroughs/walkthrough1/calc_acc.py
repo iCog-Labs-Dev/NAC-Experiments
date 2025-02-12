@@ -98,3 +98,37 @@ def train_epoch(agent, classifier, dataset, optimizer, verbose=False):
         print()
 
     return total_loss/total_samples, total_acc/total_samples
+
+def eval_model(agent, dataset, verbose=False):
+    """
+        Evaluates performance of model using latent representations
+    """
+    Ly = 0.0
+    Acc = 0.0
+    N = 0.0
+    for batch in dataset:
+        x_name, x = batch[0]
+        y_name, y = batch[1]
+        N += x.shape[0]
+        _ = agent.settle(x)
+
+        z3_latents = agent.ngc_model.extract("z3", "phi(z)")
+
+        logits = classifier(z3_latents)
+        probs = tf.nn.softmax(logits)
+        Ly += tf.reduce_sum(metric.cat_nll(probs, y))
+
+        # Compute accuracy
+        y_ind = tf.cast(tf.argmax(y, 1), dtype=tf.int32)
+        y_pred = tf.cast(tf.argmax(probs, 1), dtype=tf.int32)
+        Acc += tf.reduce_sum(tf.cast(tf.equal(y_pred, y_ind), dtype=tf.float32))
+
+        agent.clear()
+        if verbose:
+            print("\r Acc {}  Ly {} over {} samples...".format((Acc / N), (Ly / N), N), end="")
+    if verbose:
+        print()
+
+    Ly /= N
+    Acc /= N
+    return Ly, Acc
