@@ -132,3 +132,40 @@ def eval_model(agent, dataset, verbose=False):
     Ly /= N
     Acc /= N
     return Ly, Acc
+
+with tf.device(gpu_tag):
+    agent = io_tools.deserialize(model_fname)
+    print(" > Loading model: ", model_fname)
+
+    print("\nStarting training...")
+    best_test_acc = 0.0
+    patience = 5
+    patience_counter = 0
+
+    train_accs = []
+    val_accs = []
+
+    for epoch in range(50):
+            train_loss, train_acc = train_epoch(agent, classifier, train_set, optimizer, verbose=True)
+            test_loss, test_acc = eval_model(agent, test_set)
+
+            train_accs.append(train_acc)
+            val_accs.append(test_acc)
+
+            print(f"Epoch {epoch+1}/50:")
+            print(f"  Train Loss: {train_loss:.4f}, Train Acc: {train_acc:.4f}")
+            print(f"  Test Loss: {test_loss:.4f}, Test Acc: {test_acc:.4f}")
+
+            if test_acc > best_test_acc:
+                best_test_acc = test_acc
+                patience_counter = 0
+                with open('gncn_t1/classifier_weight.pkl', 'wb') as f:
+                    pickle.dump(classifier.get_weights(), f)
+            else:
+                patience_counter += 1
+                if patience_counter >= patience:
+                    print(f"\nEarly stopping triggered. Best test accuracy: {best_test_acc:.4f}")
+                    break
+
+    np.save("gncn_t1/train_acc.npy", np.array(train_accs))
+    np.save("gncn_t1/test_acc.npy", np.array(val_accs))
