@@ -43,3 +43,6 @@ dev_xfname = args.getArg("test_xfname")
 dev_batch_size = int(args.getArg("dev_batch_size"))
 model_path = args.getArg("model_fname")
 beta = args.getArg("beta")
+
+def to_numpy(tensor):
+    return tensor.numpy() if hasattr(tensor, 'numpy') else tensor
