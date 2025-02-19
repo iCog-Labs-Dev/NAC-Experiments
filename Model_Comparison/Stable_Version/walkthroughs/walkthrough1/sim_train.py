@@ -76,13 +76,12 @@ args = Config(cfg_fname)
 
 model_type = args.getArg("model_type")
 out_dir = args.getArg("out_dir")
-batch_size = int(args.getArg("batch_size")) #128 #32
-dev_batch_size = int(args.getArg("dev_batch_size")) #128 #32
+batch_size = int(args.getArg("batch_size")) 
+dev_batch_size = int(args.getArg("dev_batch_size"))
 
 eta = float(args.getArg("eta")) # learning rate/step size (optimzation)
 num_iter = int(args.getArg("num_iter")) # num training iterations
 
-# create training sample
 xfname = args.getArg("train_xfname")
 print(" >> Loading data into memory...")
 X = transform.binarize( tf.cast(np.load(xfname),dtype=tf.float32) ).numpy()
@@ -90,10 +89,9 @@ x_dim = X.shape[1]
 args.setArg("x_dim",x_dim)
 train_set = DataLoader(design_matrices=[("z0",X)], batch_size=batch_size)
 
-# create development/validation sample
-xfname = args.getArg("dev_xfname") #"../data/mnist/validX.tsv"
-X = transform.binarize( tf.cast(np.load(xfname),dtype=tf.float32) ).numpy()
-dev_set = DataLoader(design_matrices=[("z0",X)], batch_size=dev_batch_size, disable_shuffle=True)
+test_xfname = args.getArg("test_xfname")
+test_X = transform.binarize( tf.cast(np.load(test_xfname),dtype=tf.float32) ).numpy()
+test_set = DataLoader(design_matrices=[("z0",test_X)], batch_size=dev_batch_size, disable_shuffle=True)
 
 def eval_model(agent, dataset, calc_ToD, verbose=False):
     """
@@ -155,7 +153,7 @@ with tf.device(gpu_tag):
         ############################################################################
         # create a  training loop
         ToD, Lx = eval_model(agent, train_set, calc_ToD, verbose=True)
-        vToD, vLx = eval_model(agent, dev_set, calc_ToD, verbose=True)
+        vToD, vLx = eval_model(agent, test_set, calc_ToD, verbose=True)
         print("{} | ToD = {}  Lx = {} ; vToD = {}  vLx = {}".format(-1, ToD, Lx, vToD, vLx))
         Lx_series.append(Lx)
         ToD_series.append(ToD)
@@ -198,7 +196,7 @@ with tf.device(gpu_tag):
             ToD = ToD / (n_s * 1.0)
             Lx = Lx / (n_s * 1.0)
             # evaluate generalization ability on dev set
-            vToD, vLx = eval_model(agent, dev_set, calc_ToD)
+            vToD, vLx = eval_model(agent, test_set, calc_ToD)
             print("-------------------------------------------------")
             print("{} | ToD = {}  Lx = {} ; vToD = {}  vLx = {}".format(
                   i, ToD, Lx, vToD, vLx)
@@ -231,5 +229,5 @@ with tf.device(gpu_tag):
         sim_end_time = time.time()
         sim_time = sim_end_time - sim_start_time
         print("------------------------------------")
-        sim_time_hr = (sim_time/3600.0) # convert time to hours
+        sim_time_hr = (sim_time/3600.0)
         print(" Trial.sim_time = {} h  ({} sec)".format(sim_time_hr, sim_time))
