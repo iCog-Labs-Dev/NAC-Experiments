@@ -4,7 +4,7 @@ import numpy as np
 import pickle
 
 class GMM:
-    def __init__(self, k, max_iter=50, assume_diag_cov=False, init_kmeans=True):
+    def __init__(self, k, max_iter=5, assume_diag_cov=False, init_kmeans=True):
         self.k = k
         self.max_iter = max_iter
         self.assume_diag_cov = assume_diag_cov
