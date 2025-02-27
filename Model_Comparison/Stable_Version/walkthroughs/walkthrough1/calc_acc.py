@@ -159,7 +159,8 @@ with tf.device(gpu_tag):
             if test_acc > best_test_acc:
                 best_test_acc = test_acc
                 patience_counter = 0
-                with open('gncn_t1/classifier_weight.pkl', 'wb') as f:
+                out_dir = args.getArg("out_dir").rstrip('/')
+                with open(f'{out_dir}/classifier_weight.pkl', 'wb') as f:
                     pickle.dump(classifier.get_weights(), f)
             else:
                 patience_counter += 1
@@ -167,5 +168,5 @@ with tf.device(gpu_tag):
                     print(f"\nEarly stopping triggered. Best test accuracy: {best_test_acc:.4f}")
                     break
 
-    np.save("gncn_t1/train_acc.npy", np.array(train_accs))
-    np.save("gncn_t1/test_acc.npy", np.array(val_accs))
+    np.save(f"{out_dir}/train_acc.npy", np.array(train_accs))
+    np.save(f"{out_dir}/test_acc.npy", np.array(val_accs))

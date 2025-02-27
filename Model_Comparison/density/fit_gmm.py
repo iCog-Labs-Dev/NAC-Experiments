@@ -3,7 +3,7 @@ import pickle
 import os
 from .gmm import GMM
 
-def fit_gmm(data_loader, model, latent_dim, gmm_file="gmm.pkl", n_components=75, max_iter=50,
+def fit_gmm(data_loader, model, latent_dim, gmm_file="gmm.pth", n_components=75, max_iter=5,
                         assume_diag_cov=False, init_kmeans=True, device=None):
     """
     Fit a GMM using latent representations extracted from a model.
@@ -48,15 +48,17 @@ def fit_gmm(data_loader, model, latent_dim, gmm_file="gmm.pkl", n_components=75,
 
     print(f"Collected latent data shape: {data.shape}")
 
+    if not isinstance(gmm_file, str):
+        gmm_file = f"gmm.pth"
+
     if os.path.exists(gmm_file):
         os.remove(gmm_file)
         print(f"Removed existing {gmm_file}")
-
+    
     gmm = GMM(k=n_components, max_iter=max_iter, assume_diag_cov=assume_diag_cov, init_kmeans=init_kmeans)
     gmm.fit(data)
 
     # Save the GMM model
     print(f"Saving GMM to file: {gmm_file}")
-    with open(gmm_file, 'wb') as f:
-        pickle.dump(gmm, f)
+    torch.save(gmm, gmm_file)
     return gmm
