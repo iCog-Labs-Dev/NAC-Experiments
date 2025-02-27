@@ -127,7 +127,7 @@ def main():
     # Initialize the model
     model = load_model(args.model, config)
     
-    # Set the optimizer based on model type
+    # Set the optimizer
     if args.model == "GAN_AE":
         optimizer = optim.Adam(model.parameters(), lr=config['learning_rate'])
     else:
@@ -139,10 +139,10 @@ def main():
     
     for epoch in range(1, config['num_epochs'] + 1):
         avg_bce = train(model, train_loader, optimizer, args.model, config)
-        logging.info(f'Epoch [{epoch}/{config["num_epochs"]}]  Train BCE = {avg_bce:.2f}')
+        print(f'Epoch [{epoch}/{config["num_epochs"]}]  Train BCE = {avg_bce:.2f}')
     
     sim_time = time.time() - sim_start_time
-    logging.info(f"Total training time: {sim_time:.2f} sec")
+    print(f"Total training time: {sim_time:.2f} sec")
     
     # Save the trained model
     save_directory = f'./{args.model}/model.pth'
