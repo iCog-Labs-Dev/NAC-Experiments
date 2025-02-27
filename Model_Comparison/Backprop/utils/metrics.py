@@ -106,3 +106,54 @@ def classification_error(encoder, train_loader, test_loader):
     error = 1 - accuracy_score(Y_test, Y_pred)
 
     return error * 100  
+
+
+#another implementation of classification error without binarization
+def classification_error(model, train_loader, test_loader, model_name="Unknown"):
+    model.eval()
+
+    def extract_latents(loader, name=""):
+        latent_representations = []
+        labels = []
+        with torch.no_grad():
+            for batch in loader:
+                data, target = batch
+                data = data.view(data.size(0), -1)
+
+                # Convert one-hot encoded targets to class indices if needed
+                if target.ndim > 1:  # If one-hot encoded (e.g., shape [batch_size, 10])
+                    target = torch.argmax(target, dim=1)
+                else:  # Already class indices
+                    target = target
+
+                encoder_output = model.encoder(data)
+                if isinstance(encoder_output, tuple):
+                    mu = encoder_output[0]  # Take mu from (mu, logvar)
+                else:
+                    mu = encoder_output
+
+                latent_representations.append(mu.cpu().numpy())
+                labels.append(target.cpu().numpy())
+        X = np.vstack(latent_representations)
+        y = np.hstack(labels)
+        print(f"{model_name} - {name} latent shape: {X.shape}, label shape: {y.shape}")
+        print(f"{model_name} - {name} latent sample (first 5): {X[0, :5]}")
+        print(f"{model_name} - {name} label sample (first 5): {y[:5]}")
+        return X, y
+
+    X_train, Y_train = extract_latents(train_loader, "Train")
+    X_test, Y_test = extract_latents(test_loader, "Test")
+
+    assert X_train.shape[0] == Y_train.shape[0], "Mismatch in training samples!"
+    assert X_test.shape[0] == Y_test.shape[0], "Mismatch in test samples!"
+
+    classifier = LogisticRegression(max_iter=1000, multi_class="multinomial")
+    classifier.fit(X_train, Y_train)
+
+    Y_pred = classifier.predict(X_test)
+    accuracy = accuracy_score(Y_test, Y_pred)
+    error_percentage = 100 * (1 - accuracy)
+
+    print(f"{model_name} - Predicted labels (first 5): {Y_pred[:5]}")
+    print(f"{model_name} - True labels (first 5): {Y_test[:5]}")
+    return error_percentage
