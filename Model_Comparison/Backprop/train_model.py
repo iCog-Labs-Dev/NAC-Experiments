@@ -18,7 +18,7 @@ from RAE.rae_model import RegularizedAutoencoder
 from GAN_AE.gan_ae_model import GANAE
 
 """
-Usage: python3 train_model.py --model=model_name --config=path_to/config.py
+Usage: python train_model.py --model=model_name --config=path_to/config.py
 """
 
 # Set random seed for reproducibility

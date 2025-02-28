@@ -22,7 +22,7 @@ from RAE.rae_model import RegularizedAutoencoder
 from GAN_AE.gan_ae_model import GANAE
 
 """
-Usage: python3 eval_model.py --model=model_name --config=path_to/config.py
+Usage: python eval_model.py --model=model_name --config=path_to/config.py
 """
 
 # Set up logging
@@ -129,12 +129,12 @@ def evaluate(
     results['%Err'] = classification_error(model, train_loader, test_loader)
     print(f"Classification error: {results['%Err']:.2f}%")
     
-    logging.info("Fitting GMM on latent space...")
-    gmm = fit_gmm(train_loader, model, latent_dim, n_components)
+    # logging.info("Fitting GMM on latent space...")
+    # gmm = fit_gmm(train_loader, model, latent_dim, n_components)
     
-    logging.info("Evaluating Monte Carlo log-likelihood...") 
-    results['log_p(x)'] = evaluate_logpx(test_loader, model, gmm, latent_dim, num_samples)
-    print(f"Monte Carlo log-likelihood: {results['log_p(x)']:.2f}")
+    # logging.info("Evaluating Monte Carlo log-likelihood...") 
+    # results['log_p(x)'] = evaluate_logpx(test_loader, model, gmm, latent_dim, num_samples)
+    # print(f"Monte Carlo log-likelihood: {results['log_p(x)']:.2f}")
 
     return results
 
