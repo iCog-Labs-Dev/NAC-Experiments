@@ -50,66 +50,7 @@ def masked_mse(model, loader):
 
     return avg_mse
 
-def extract_latents(encoder, dataloader):
-    """
-    Extracts latent representations from a trained encoder.
-    
-    Parameters:
-    encoder: Trained encoder model.
-    dataloader: Dataloader containing the dataset.
-
-    Returns:
-        Extracted latent representations, and corresponding labels.
-    """
-    encoder.eval()
-    latents, labels = [], []
-
-    with torch.no_grad():
-        for batch_X, batch_Y in dataloader:
-            batch_X = batch_X 
-            batch_X = (batch_X > 0.5).float()  
-
-            output = encoder(batch_X)
-
-            if isinstance(output, tuple):  
-                Z = output[0] 
-            else:
-                Z = output 
-
-            latents.append(Z.view(Z.size(0), -1).cpu().numpy()) 
-            labels.append(batch_Y.cpu().numpy())
-
-    return np.vstack(latents), np.hstack(labels) 
-
-
-def classification_error(encoder, train_loader, test_loader):
-    """
-    Computes the classification error using a log-linear model (logistic regression)
-    fit to the latent representations.
-
-    Parameters:
-    encoder: Trained encoder model.
-    train_loader: Training dataloader.
-    test_loader: Testing dataloader.
-
-    Returns:
-    float: Classification error in percentage.
-    """
-    Z_train, Y_train = extract_latents(encoder, train_loader)
-    Z_test, Y_test = extract_latents(encoder, test_loader)
-
-    classifier = LogisticRegression(max_iter=1000, solver='lbfgs', multi_class='multinomial')
-    classifier.fit(Z_train, Y_train)
-
-    Y_pred = classifier.predict(Z_test)
-
-    error = 1 - accuracy_score(Y_test, Y_pred)
-
-    return error * 100  
-
-
-#another implementation of classification error without binarization
-def classification_error(model, train_loader, test_loader, model_name="Unknown"):
+def classification_error(model, train_loader, test_loader):
     model.eval()
 
     def extract_latents(loader, name=""):
@@ -121,14 +62,14 @@ def classification_error(model, train_loader, test_loader, model_name="Unknown")
                 data = data.view(data.size(0), -1)
 
                 # Convert one-hot encoded targets to class indices if needed
-                if target.ndim > 1:  # If one-hot encoded (e.g., shape [batch_size, 10])
+                if target.ndim > 1:  
                     target = torch.argmax(target, dim=1)
-                else:  # Already class indices
+                else: 
                     target = target
 
                 encoder_output = model.encoder(data)
                 if isinstance(encoder_output, tuple):
-                    mu = encoder_output[0]  # Take mu from (mu, logvar)
+                    mu = encoder_output[0] 
                 else:
                     mu = encoder_output
 
@@ -136,9 +77,9 @@ def classification_error(model, train_loader, test_loader, model_name="Unknown")
                 labels.append(target.cpu().numpy())
         X = np.vstack(latent_representations)
         y = np.hstack(labels)
-        print(f"{model_name} - {name} latent shape: {X.shape}, label shape: {y.shape}")
-        print(f"{model_name} - {name} latent sample (first 5): {X[0, :5]}")
-        print(f"{model_name} - {name} label sample (first 5): {y[:5]}")
+        # print(f"{model_name} - {name} latent shape: {X.shape}, label shape: {y.shape}")
+        # print(f"{model_name} - {name} latent sample (first 5): {X[0, :5]}")
+        # print(f"{model_name} - {name} label sample (first 5): {y[:5]}")
         return X, y
 
     X_train, Y_train = extract_latents(train_loader, "Train")
@@ -154,6 +95,6 @@ def classification_error(model, train_loader, test_loader, model_name="Unknown")
     accuracy = accuracy_score(Y_test, Y_pred)
     error_percentage = 100 * (1 - accuracy)
 
-    print(f"{model_name} - Predicted labels (first 5): {Y_pred[:5]}")
-    print(f"{model_name} - True labels (first 5): {Y_test[:5]}")
+    print(f"Predicted labels (first 5): {Y_pred[:5]}")
+    print(f"True labels (first 5): {Y_test[:5]}")
     return error_percentage
