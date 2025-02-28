@@ -1,0 +1,3 @@
+- suggested sparce networks with relu
+https://ieeexplore.ieee.org/document/8963851
+https://github.com/ago109/active-neural-generative-coding
