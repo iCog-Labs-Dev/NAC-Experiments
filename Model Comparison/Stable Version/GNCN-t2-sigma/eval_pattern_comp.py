@@ -115,7 +115,7 @@ def calculate_mse(model_path, data_path, config_path):
             first_batch = False # stop visualization for other batches
 
     # Calculate the MEAN squared error, averaged over ALL UNMASKED PIXELS
-    MSE = total_squared_error / total_unmasked_pixels
+    MSE = (total_squared_error / total_unmasked_pixels) * batch_size
     return MSE
 
 with tf.device(gpu_tag):
