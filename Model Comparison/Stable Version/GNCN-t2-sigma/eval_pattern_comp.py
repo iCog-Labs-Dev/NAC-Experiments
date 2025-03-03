@@ -12,7 +12,7 @@ import ngclearn.utils.io_utils as io_tools
 from ngclearn.utils.data_utils import DataLoader
 from ngclearn.utils.config import Config
 
-options, remainder = getopt.getopt(sys.argv[1:], '', ["config=","gpu_id=","trial="])
+options, remainder = getopt.getopt(sys.argv[1:], '', ["config=", "gpu_id=", "trial="])
 cfg_fname = None
 use_gpu = False
 trial_num = 0
@@ -31,10 +31,10 @@ for opt, arg in options:
 mid = gpu_id
 if mid >= 0:
     print(" > Using GPU ID {0}".format(mid))
-    os.environ["CUDA_VISIBLE_DEVICES"]="{0}".format(mid)
+    os.environ["CUDA_VISIBLE_DEVICES"] = "{0}".format(mid)
     gpu_tag = '/GPU:0'
 else:
-    os.environ["CUDA_VISIBLE_DEVICES"]="-1"
+    os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
     gpu_tag = '/CPU:0'
 
 args = Config(cfg_fname)
@@ -47,77 +47,89 @@ beta = args.getArg("beta")
 def to_numpy(tensor):
     return tensor.numpy() if hasattr(tensor, 'numpy') else tensor
 
-def calculate_mse(model_path, data_path, config_path):
+def calculate_mmse(model_path, data_path, config_path):
+    # Load and binarize the data
     X = transform.binarize(tf.cast(np.load(data_path), dtype=tf.float32)).numpy()
     dataset = DataLoader(design_matrices=[("z0", X)], batch_size=dev_batch_size, disable_shuffle=True)
     agent = io_tools.deserialize(model_path)
 
     total_squared_error = 0.0
-    total_unmasked_pixels = 0  # Count of pixels *only* in the unmasked region
-    first_batch = True # a flag to perform visualization only once
+    total_unmasked_pixels = 0  # Count of unmasked pixels (left half)
+    first_batch = True  # Flag to perform visualization only once
 
     for batch in dataset:
         x_name, x = batch[0]
         x = transform.binarize(x).numpy()
         batch_size = x.shape[0]
 
+        # Reshape each image to 28x28
         x_2d = x.reshape(batch_size, 28, 28)
 
-        mask = np.ones_like(x_2d, dtype=np.float32)
-        mask[:, :, 14:] = 0  # Mask the right half
-        mask_1d = mask.reshape(batch_size, 784) # Reshape the mask for easy calculation
-        num_unmasked_pixels = np.sum(1 - mask_1d)
+        # Create mask M: set right half pixels to 1 (masked) and left half to 0 (unmasked)
+        M = np.zeros_like(x_2d, dtype=np.float32)
+        M[:, :, 14:] = 1  # Mask the right half
 
-        x_masked = x_2d.reshape(batch_size, 784)  # Reshape here.
+        # Create masked input by keeping only the unmasked region:
+        # (1 - M) is 1 for left half and 0 for right half.
+        masked_x = x_2d * (1 - M)
+        masked_x_flat = masked_x.reshape(batch_size, 784)
 
-        x_hat = agent.settle(x_masked)  # Reconstructed image (batch_size, 784)
+        # Get the reconstruction from the agent using the masked input
+        x_hat = agent.settle(masked_x_flat)
 
-        # Calculate squared error for all 784 pixels per image using *your* mse function
-        # Here the dimension of each image is N=784
-        squared_errors = metric.mse(x_hat, x) # returns a vector (batch_size, )
-        # Calculate the mean squared error over the *unmasked* regions only
+        # Reshape the original images and mask for error calculation (flattened)
+        x_flat = x_2d.reshape(batch_size, 784)
+        M_flat = M.reshape(batch_size, 784)
 
-        masked_errors = squared_errors
-        total_squared_error += np.sum(masked_errors)
+        # Compute the error only on unmasked regions:
+        # element-wise multiply the error (x_hat - x) with (1 - M)
+        error = (x_hat - x_flat) * (1 - M_flat)
 
-        total_unmasked_pixels += num_unmasked_pixels
+        # Compute squared error per image using the dot-product formulation:
+        # For each image: squared_error = dot(error, error)
+        squared_error_per_image = np.sum(error * error, axis=1)  # shape: (batch_size,)
+        
+        # Accumulate totals over all images in the batch
+        total_squared_error += np.sum(squared_error_per_image)
+        total_unmasked_pixels += np.sum(1 - M_flat)  # counts all unmasked pixels
+
         agent.clear()
 
-        # Visualization (only for the first batch)
+        # Visualization for the first batch only
         if first_batch:
             plt.figure(figsize=(15, 5))
 
             # Plot the original image
             plt.subplot(1, 3, 1)
             plt.title('Original Image')
-            plt.imshow(to_numpy(x[9]).reshape(28, 28), cmap='gray')
+            plt.imshow(x_2d[9], cmap='gray')
             plt.axis('off')
 
-            # Plot the masked image
+            # Plot the masked image (should show only left half)
             plt.subplot(1, 3, 2)
             plt.title('Masked Image')
-            plt.imshow(to_numpy(x_masked[9]).reshape(28, 28), cmap='gray')
+            plt.imshow(masked_x[9], cmap='gray')
             plt.axis('off')
 
-            # Plot the reconstructed image
+            # Convert the reconstructed image to numpy and reshape it for plotting
+            x_hat_np = to_numpy(x_hat)
             plt.subplot(1, 3, 3)
             plt.title('Reconstructed Image')
-            plt.imshow(to_numpy(x_hat[9]).reshape(28, 28), cmap='gray')
+            plt.imshow(x_hat_np[9].reshape(28, 28), cmap='gray')
             plt.axis('off')
 
             # Save the visualization
             if os.path.exists('image_reconstruction.png'):
                 os.remove('image_reconstruction.png')
-
             plt.tight_layout()
             plt.savefig('image_reconstruction.png')
             plt.close()
-            first_batch = False # stop visualization for other batches
+            first_batch = False
 
-    # Calculate the MEAN squared error, averaged over ALL UNMASKED PIXELS
-    MSE = (total_squared_error / total_unmasked_pixels) * batch_size
-    return MSE
+    # Calculate overall MMSE: total squared error divided by total number of unmasked pixels
+    mmse = (total_squared_error / total_unmasked_pixels)* batch_size
+    return mmse
 
 with tf.device(gpu_tag):
-    mse = calculate_mse(model_path, dev_xfname, dev_batch_size)
-    print(f"Mean Squared Error: {mse}")
+    mmse = calculate_mmse(model_path, dev_xfname, dev_batch_size)
+    print(f"Masked Mean Squared Error: {mmse}")
