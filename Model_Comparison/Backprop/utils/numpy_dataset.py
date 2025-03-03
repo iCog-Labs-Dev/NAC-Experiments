@@ -23,7 +23,7 @@ class NumpyDataset(Dataset):
     def __init__(self, dataX, dataY=None):
         self.dataX = np.load(dataX)
         if dataY is not None:
-             self.dataY = np.argmax(np.load(dataY_path), axis=1)  # Convert one-hot to class indices (0–9)
+             self.dataY = np.argmax(np.load(dataY), axis=1)  # Convert one-hot to class indices (0–9)
         else:
             self.dataY = None
 

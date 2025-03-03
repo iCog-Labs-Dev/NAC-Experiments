@@ -14,7 +14,9 @@ seed = 69
 os.environ["CUDA_VISIBLE_DEVICES"]="0"
 tf.random.set_seed(seed=seed)
 np.random.seed(seed)
-
+"""
+Usage: python calc_acc.py --config=path_to_config/fit.cfg 
+"""
 options, remainder = getopt.getopt(sys.argv[1:], '', ["config=","gpu_id="])
 cfg_fname = None
 use_gpu = False

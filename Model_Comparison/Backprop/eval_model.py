@@ -129,12 +129,12 @@ def evaluate(
     results['%Err'] = classification_error(model, train_loader, test_loader)
     print(f"Classification error: {results['%Err']:.2f}%")
     
-    # logging.info("Fitting GMM on latent space...")
-    # gmm = fit_gmm(train_loader, model, latent_dim, n_components)
+    logging.info("Fitting GMM on latent space...")
+    gmm = fit_gmm(train_loader, model, latent_dim, n_components)
     
-    # logging.info("Evaluating Monte Carlo log-likelihood...") 
-    # results['log_p(x)'] = evaluate_logpx(test_loader, model, gmm, latent_dim, num_samples)
-    # print(f"Monte Carlo log-likelihood: {results['log_p(x)']:.2f}")
+    logging.info("Evaluating Monte Carlo log-likelihood...") 
+    results['log_p(x)'] = evaluate_logpx(test_loader, model, gmm, latent_dim, num_samples)
+    print(f"Monte Carlo log-likelihood: {results['log_p(x)']:.2f}")
 
     return results
 
