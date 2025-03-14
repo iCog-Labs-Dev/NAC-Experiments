@@ -23,8 +23,8 @@ The NGC framework is rooted in predictive processing theory, offering a novel ap
 To set up the environment and run experiments, follow these steps:
 1. Clone the Repository
 ```
-git clone https://github.com/your-repo/ngc-experiments.git
-cd ngc-experiments
+git clone https://github.com/iCog-Labs-Dev/NAC-Experiments.git
+cd NAC-Experiments
 ```
 2. Build the Docker Image
 ```
