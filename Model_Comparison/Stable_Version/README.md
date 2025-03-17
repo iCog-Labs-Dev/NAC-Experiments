@@ -33,12 +33,16 @@ python setup.py install
 ```
 ### Using Docker
 Alternatively, you can set up a pre-configured environment using Docker:
-1. Build the Docker Image
+1. Navigate to the directory where the Dockerfile is located.
+   ```
+   cd NAC-Experiments/Model_Comparison/Stable_Version
+   ```
+2. Build the Docker Image
    
    ```
    docker build -t nac-experiments .
    ```
-2. Run the Container
+3. Run the Container
    
    ```
     docker run --rm -it nac-experiments
