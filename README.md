@@ -24,7 +24,7 @@ To set up the environment and run experiments, follow these steps:
 1. Clone the Repository
 ```
 git clone https://github.com/iCog-Labs-Dev/NAC-Experiments.git
-cd NAC-Experiments
+cd NAC-Experiments/Model_Comparison/Stable_Version
 ```
 2. Build the Docker Image
 ```
